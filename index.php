@@ -1766,10 +1766,10 @@ namespace {
 
 		if ($relative_uri == 'webdav.js') {
 			fseek($fp, 49434, SEEK_SET);
-			echo fread($fp, 24077);
+			echo fread($fp, 24229);
 		}
 		else {
-			fseek($fp, 49434 + 24077, SEEK_SET);
+			fseek($fp, 49434 + 24229, SEEK_SET);
 			echo fread($fp, 6728);
 		}
 
@@ -2160,8 +2160,9 @@ const WebDAVNavigator = (url, options) => {
 			}
 
 			var is_dir = node.querySelector('resourcetype collection') ? true : false;
+			var index = sort_order == 'name' && is_dir ? 0 : 1;
 
-			items[is_dir ? 0 : 1].push({
+			items[index].push({
 				'uri': item_uri,
 				'name': name,
 				'size': !is_dir && (prop = node.querySelector('getcontentlength')) ? parseInt(prop.textContent, 10) : null,
@@ -2171,7 +2172,10 @@ const WebDAVNavigator = (url, options) => {
 			});
 		});
 
-		items[0].sort((a, b) => a.name.localeCompare(b.name));
+		if (sort_order == 'name') {
+			items[0].sort((a, b) => a.name.localeCompare(b.name));
+		}
+
 		items[1].sort((a, b) => {
 			if (sort_order == 'date') {
 				return b.modified - a.modified;
@@ -2184,8 +2188,13 @@ const WebDAVNavigator = (url, options) => {
 			}
 		});
 
-		// Sort with directories first
-		items = items[0].concat(items[1]);
+		if (sort_order == 'name') {
+			// Sort with directories first
+			items = items[0].concat(items[1]);
+		}
+		else {
+			items = items[1];
+		}
 
 		var table = '';
 		var parent = uri.replace(/\/+$/, '').split('/').slice(0, -1).join('/') + '/';
