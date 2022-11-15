@@ -580,7 +580,7 @@ namespace KD2\WebDAV
 				$dav_ns = $ns['DAV:'] . ':';
 			}
 
-			$regexp = '/<(' . $dav_ns . 'prop(?!find))[^>]*(.*?)<\/\1\s*>/s';
+			$regexp = '/<(' . $dav_ns . 'prop(?!find))[^>]*?>(.*?)<\/\1\s*>/s';
 			if (!preg_match($regexp, $body, $match)) {
 				return null;
 			}
@@ -706,7 +706,7 @@ namespace KD2\WebDAV
 				}
 			}
 
-			$out = '<?xml version="1.0" encoding="utf-8"';
+			$out = '<?xml version="1.0" encoding="utf-8"?>';
 			$out .= '<d:multistatus';
 
 			foreach ($root_namespaces as $url => $alias) {
@@ -907,7 +907,7 @@ namespace KD2\WebDAV
 			header('HTTP/1.1 207 Multi-Status', true);
 			header('Content-Type: application/xml; charset=utf-8');
 
-			$out = '<?xml version="1.0" encoding="utf-8"' . "\n";
+			$out = '<?xml version="1.0" encoding="utf-8"?>' . "\n";
 			$out .= '<d:multistatus xmlns:d="DAV:">';
 			$out .= '</d:multistatus>';
 
@@ -990,7 +990,7 @@ namespace KD2\WebDAV
 			header('Content-Type: application/xml; charset=utf-8');
 			header(sprintf('Lock-Token: <%s>', $token));
 
-			$out = '<?xml version="1.0" encoding="utf-8"' . "\n";
+			$out = '<?xml version="1.0" encoding="utf-8"?>' . "\n";
 			$out .= '<d:prop xmlns:d="DAV:">';
 			$out .= '<d:lockdiscovery><d:activelock>';
 
@@ -1224,7 +1224,7 @@ namespace KD2\WebDAV
 
 			header('Content-Type: application/xml; charset=utf-8', true);
 
-			printf('<?xml version="1.0" encoding="utf-8"<d:error xmlns:d="DAV:" xmlns:s="http://sabredav.org/ns"><s:message>%s</s:message></d:error>', htmlspecialchars($e->getMessage(), ENT_XML1));
+			printf('<?xml version="1.0" encoding="utf-8"?><d:error xmlns:d="DAV:" xmlns:s="http://sabredav.org/ns"><s:message>%s</s:message></d:error>', htmlspecialchars($e->getMessage(), ENT_XML1));
 		}
 
 		static public function hmac(array $data, string $key = '')
@@ -1651,12 +1651,12 @@ namespace {
 		$fp = fopen(__FILE__, 'r');
 
 		if ($relative_uri == 'webdav.js') {
-			fseek($fp, 43642, SEEK_SET);
-			echo fread($fp, 24229);
+			fseek($fp, 43652, SEEK_SET);
+			echo fread($fp, 24265);
 		}
 		else {
-			fseek($fp, 43642 + 24229, SEEK_SET);
-			echo fread($fp, 6752);
+			fseek($fp, 43652 + 24265, SEEK_SET);
+			echo fread($fp, 6760);
 		}
 
 		fclose($fp);
@@ -2082,6 +2082,7 @@ const WebDAVNavigator = (url, options) => {
 			items = items[1];
 		}
 
+
 		var table = '';
 		var parent = uri.replace(/\/+$/, '').split('/').slice(0, -1).join('/') + '/';
 
@@ -2095,7 +2096,7 @@ const WebDAVNavigator = (url, options) => {
 		items.forEach(item => {
 			var row = item.is_dir ? dir_row_tpl : file_row_tpl;
 			item.size = item.size !== null ? formatBytes(item.size).replace(/ /g, '&nbsp;') : null;
-			item.icon = item.is_dir ? '&#x1F4C1;' : item.uri.replace(/^.*\.(\w+)$/, '$1').toUpperCase();
+			item.icon = item.is_dir ? '&#x1F4C1;' : (item.uri.indexOf('.') > 0 ? item.uri.replace(/^.*\.(\w+)$/, '$1').toUpperCase() : '');
 			item.modified = item.modified !== null ? formatDate(item.modified) : null;
 			item.name = html(item.name);
 			table += template(row, item);
@@ -2464,6 +2465,9 @@ th, td {
 	padding: .5em;
 	text-align: left;
 	border: 2px solid var(--g2-color);
+}
+
+th {
 	word-break: break-all;
 }
 

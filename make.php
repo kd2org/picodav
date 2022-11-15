@@ -6,7 +6,7 @@ function clean_php_source(string $file): string
 {
 	$php = file_get_contents($file);
 	$php = preg_replace('/^namespace\s+.*;\s*$/m', '', $php);
-	$php = preg_replace('/<\?php\s*|\s*\?>/', '', $php);
+	$php = preg_replace('/<\?php\s*/', '', $php);
 	$php = preg_replace(';/\*(?!\*/).*?\*/;s', '', $php);
 	$php = preg_replace('/^/m', "\t", $php);
 	$php = preg_replace('/^\s*$/m', "", $php);
