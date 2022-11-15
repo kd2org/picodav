@@ -2,8 +2,21 @@
 
 $out = fopen('index.php', 'w');
 
+function clean_php_source(string $file): string
+{
+	$php = file_get_contents($file);
+	$php = preg_replace('/^namespace\s+.*;\s*$/m', '', $php);
+	$php = preg_replace('/<\?php\s*|\s*\?>/', '', $php);
+	$php = preg_replace(';/\*(?!\*/).*?\*/;s', '', $php);
+	$php = preg_replace('/^/m', "\t", $php);
+	$php = preg_replace('/^\s*$/m', "", $php);
+	return $php;
+}
+
 $php = file_get_contents('server.php');
 $php = strtr($php, [
+	'//__KD2\WebDAV\Server__' => clean_php_source('lib/KD2/WebDAV/Server.php'),
+	'//__KD2\WebDAV\AbstractStorage__' => clean_php_source('lib/KD2/WebDAV/AbstractStorage.php'),
 	'__JS_SIZE__' => filesize('webdav.js'),
 	'__CSS_SIZE__' => filesize('webdav.css'),
 ]);

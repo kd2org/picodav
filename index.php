@@ -2,52 +2,9 @@
 
 namespace KD2\WebDAV
 {
-	/*
-		This file is part of KD2FW -- <https://kd2.org/>
-
-		Copyright (c) 2001-2022+ BohwaZ <https://bohwaz.net/>
-		All rights reserved.
-
-		KD2FW is free software: you can redistribute it and/or modify
-		it under the terms of the GNU Affero General Public License as published by
-		the Free Software Foundation, either version 3 of the License, or
-		(at your option) any later version.
-
-		KD2FW is distributed in the hope that it will be useful,
-		but WITHOUT ANY WARRANTY; without even the implied warranty of
-		MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-		GNU Affero General Public License for more details.
-
-		You should have received a copy of the GNU Affero General Public License
-		along with KD2FW.  If not, see <https://www.gnu.org/licenses/>.
-	*/
-
+	
 	class Exception extends \RuntimeException {}
 
-	/**
-	 * This is a minimal, lightweight, and self-supported WebDAV server
-	 * it does not require anything out of standard PHP, not even an XML library.
-	 * This makes it more secure by design, and also faster and lighter.
-	 *
-	 * - supports PROPFIND custom properties
-	 * - supports HTTP ranges for GET requests
-	 * - supports GZIP encoding for GET
-	 *
-	 * You have to extend the AbstractStorage class and implement all the abstract methods to
-	 * get a class-1 and 2 compliant server.
-	 *
-	 * By default, locking is simulated: nothing is really locked, like
-	 * in https://docs.rs/webdav-handler/0.2.0/webdav_handler/fakels/index.html
-	 *
-	 * You also have to implement the actual storage of properties for
-	 * PROPPATCH requests, by extending the 'setProperties' method.
-	 * But it's not required for WebDAV file storage, only for CardDAV/CalDAV.
-	 *
-	 * Differences with SabreDAV and RFC:
-	 * - If-Match, If-Range are not implemented
-	 *
-	 * @author BohwaZ <https://bohwaz.net/>
-	 */
 	class Server
 	{
 		// List of basic DAV properties that you should return if $requested_properties is NULL
@@ -69,29 +26,19 @@ namespace KD2\WebDAV
 		];
 
 		// Custom properties
-		/**
-		 * File MD5 hash
-		 * Your implementation should return the hexadecimal encoded MD5 hash of the file
-		 */
+
 		const PROP_DIGEST_MD5 = 'urn:karadav:digest_md5';
 
-		/**
-		 * Empty value if you want to have the property found and empty, return this constant
-		 */
 		const EMPTY_PROP_VALUE = 'DAV::empty';
 
 		const SHARED_LOCK = 'shared';
 		const EXCLUSIVE_LOCK = 'exclusive';
 
-		/**
-		 * Base server URI (eg. "/index.php/webdav/")
-		 */
 		protected string $base_uri;
 
-		/**
-		 * Original URI passed to route() before trim
-		 */
 		public string $original_uri;
+
+		public string $prefix = '';
 
 		protected AbstractStorage $storage;
 
@@ -108,6 +55,15 @@ namespace KD2\WebDAV
 		public function setBaseURI(string $uri): void
 		{
 			$this->base_uri = rtrim($uri, '/') . '/';
+		}
+
+		protected function _prefix(string $uri): string
+		{
+			if (!$this->prefix) {
+				return $uri;
+			}
+
+			return rtrim(rtrim($this->prefix, '/') . '/' . ltrim($uri, '/'), '/');
 		}
 
 		protected function html_directory(string $uri, iterable $list): ?string
@@ -180,13 +136,14 @@ namespace KD2\WebDAV
 			return $out;
 		}
 
-
 		public function http_delete(string $uri): ?string
 		{
 			// check RFC 2518 Section 9.2, last paragraph
 			if (isset($_SERVER['HTTP_DEPTH']) && $_SERVER['HTTP_DEPTH'] != 'infinity') {
 				throw new Exception('We can only delete to infinity', 400);
 			}
+
+			$uri = $this->_prefix($uri);
 
 			$this->checkLock($uri);
 
@@ -234,6 +191,8 @@ namespace KD2\WebDAV
 				$hash = bin2hex(base64_decode($_SERVER['HTTP_CONTENT_MD5']));
 			}
 
+			$uri = $this->_prefix($uri);
+
 			$this->checkLock($uri);
 
 			if (!empty($_SERVER['HTTP_IF_MATCH'])) {
@@ -272,6 +231,8 @@ namespace KD2\WebDAV
 
 		public function http_head(string $uri, array &$props = []): ?string
 		{
+			$uri = $this->_prefix($uri);
+
 			$requested_props = self::BASIC_PROPERTIES;
 			$requested_props[] = 'DAV::getetag';
 
@@ -325,6 +286,8 @@ namespace KD2\WebDAV
 		{
 			$props = [];
 			$this->http_head($uri, $props);
+
+			$uri = $this->_prefix($uri);
 
 			$is_collection = !empty($props['DAV::resourcetype']) && $props['DAV::resourcetype'] == 'collection';
 			$out = '';
@@ -417,7 +380,6 @@ namespace KD2\WebDAV
 					elseif ($end === null) {
 						$end = $length;
 					}
-
 
 					http_response_code(206);
 					header(sprintf('Content-Range: bytes %s-%s/%s', $start, $end - 1, $length));
@@ -524,6 +486,8 @@ namespace KD2\WebDAV
 
 		protected function _http_copymove(string $uri, string $method): ?string
 		{
+			$uri = $this->_prefix($uri);
+
 			$destination = $_SERVER['HTTP_DESTINATION'] ?? null;
 			$depth = $_SERVER['HTTP_DEPTH'] ?? 1;
 
@@ -582,17 +546,13 @@ namespace KD2\WebDAV
 				throw new Exception('Unsupported body for MKCOL', 415);
 			}
 
+			$uri = $this->_prefix($uri);
 			$this->storage->mkcol($uri);
 
 			http_response_code(201);
 			return null;
 		}
 
-		/**
-		 * Return a list of requested properties, if any.
-		 * We are using regexp as we don't want to depend on a XML module here.
-		 * Your are free to re-implement this using a XML parser if you wish
-		 */
 		protected function extractRequestedProperties(string $body): ?array
 		{
 			// We only care about properties if the client asked for it
@@ -620,7 +580,7 @@ namespace KD2\WebDAV
 				$dav_ns = $ns['DAV:'] . ':';
 			}
 
-			$regexp = '/<(' . $dav_ns . 'prop(?!find))[^>]*?>(.*?)<\/\1\s*>/s';
+			$regexp = '/<(' . $dav_ns . 'prop(?!find))[^>]*(.*?)<\/\1\s*>/s';
 			if (!preg_match($regexp, $body, $match)) {
 				return null;
 			}
@@ -657,6 +617,7 @@ namespace KD2\WebDAV
 			// We only support depth of 0 and 1
 			$depth = isset($_SERVER['HTTP_DEPTH']) && empty($_SERVER['HTTP_DEPTH']) ? 0 : 1;
 
+			$uri = $this->_prefix($uri);
 			$body = file_get_contents('php://input');
 
 			if (false !== strpos($body, '<!DOCTYPE ')) {
@@ -745,7 +706,7 @@ namespace KD2\WebDAV
 				}
 			}
 
-			$out = '<?xml version="1.0" encoding="utf-8"?>';
+			$out = '<?xml version="1.0" encoding="utf-8"';
 			$out .= '<d:multistatus';
 
 			foreach ($root_namespaces as $url => $alias) {
@@ -757,7 +718,12 @@ namespace KD2\WebDAV
 			foreach ($items as $uri => $item) {
 				$e = '<d:response>';
 
-				$path = '/' . str_replace('%2F', '/', rawurlencode(trim($this->base_uri . $uri, '/')));
+				if ($this->prefix) {
+					$uri = substr($uri, strlen($this->prefix));
+				}
+
+				$uri = trim(rtrim($this->base_uri, '/') . '/' . ltrim($uri, '/'), '/');
+				$path = '/' . str_replace('%2F', '/', rawurlencode($uri));
 
 				if (($item['DAV::resourcetype'] ?? null) == 'collection') {
 					$path .= '/';
@@ -930,6 +896,7 @@ namespace KD2\WebDAV
 
 		public function http_proppatch(string $uri): ?string
 		{
+			$uri = $this->_prefix($uri);
 			$this->checkLock($uri);
 
 			$body = file_get_contents('php://input');
@@ -940,7 +907,7 @@ namespace KD2\WebDAV
 			header('HTTP/1.1 207 Multi-Status', true);
 			header('Content-Type: application/xml; charset=utf-8');
 
-			$out = '<?xml version="1.0" encoding="utf-8"?>' . "\n";
+			$out = '<?xml version="1.0" encoding="utf-8"' . "\n";
 			$out .= '<d:multistatus xmlns:d="DAV:">';
 			$out .= '</d:multistatus>';
 
@@ -949,6 +916,7 @@ namespace KD2\WebDAV
 
 		public function http_lock(string $uri): ?string
 		{
+			$uri = $this->_prefix($uri);
 			// We don't use this currently, but maybe later?
 			//$depth = !empty($this->_SERVER['HTTP_DEPTH']) ? 1 : 0;
 			//$timeout = isset($_SERVER['HTTP_TIMEOUT']) ? explode(',', $_SERVER['HTTP_TIMEOUT']) : [];
@@ -1022,7 +990,7 @@ namespace KD2\WebDAV
 			header('Content-Type: application/xml; charset=utf-8');
 			header(sprintf('Lock-Token: <%s>', $token));
 
-			$out = '<?xml version="1.0" encoding="utf-8"?>' . "\n";
+			$out = '<?xml version="1.0" encoding="utf-8"' . "\n";
 			$out .= '<d:prop xmlns:d="DAV:">';
 			$out .= '<d:lockdiscovery><d:activelock>';
 
@@ -1040,6 +1008,7 @@ namespace KD2\WebDAV
 
 		public function http_unlock(string $uri): ?string
 		{
+			$uri = $this->_prefix($uri);
 			$token = $this->getLockToken();
 
 			if (!$token) {
@@ -1056,9 +1025,6 @@ namespace KD2\WebDAV
 			return null;
 		}
 
-		/**
-		 * Return current lock token supplied by client
-		 */
 		protected function getLockToken(): ?string
 		{
 			if (isset($_SERVER['HTTP_LOCK_TOKEN'])
@@ -1074,10 +1040,6 @@ namespace KD2\WebDAV
 			}
 		}
 
-		/**
-		 * Check if the resource is protected
-		 * @throws Exception if the resource is locked
-		 */
 		protected function checkLock(string $uri, ?string $token = null): void
 		{
 			if ($token === null) {
@@ -1170,6 +1132,7 @@ namespace KD2\WebDAV
 			}
 
 			$uri = substr($uri, strlen($this->base_uri));
+			$uri = $this->_prefix($uri);
 			return $uri;
 		}
 
@@ -1261,12 +1224,9 @@ namespace KD2\WebDAV
 
 			header('Content-Type: application/xml; charset=utf-8', true);
 
-			printf('<?xml version="1.0" encoding="utf-8"?><d:error xmlns:d="DAV:" xmlns:s="http://sabredav.org/ns"><s:message>%s</s:message></d:error>', htmlspecialchars($e->getMessage(), ENT_XML1));
+			printf('<?xml version="1.0" encoding="utf-8"<d:error xmlns:d="DAV:" xmlns:s="http://sabredav.org/ns"><s:message>%s</s:message></d:error>', htmlspecialchars($e->getMessage(), ENT_XML1));
 		}
 
-		/**
-		 * Utility function to create HMAC hash of data, useful for NextCloud and WOPI
-		 */
 		static public function hmac(array $data, string $key = '')
 		{
 			// Protect against length attacks by pre-hashing data
@@ -1278,158 +1238,49 @@ namespace KD2\WebDAV
 	}
 
 
-	abstract class AbstractStorage
+		abstract class AbstractStorage
 	{
-		/**
-		 * Return the requested resource
-		 *
-		 * @param  string $uri Path to resource
-		 * @return null|array An array containing one of those keys:
-		 * path => Full filesystem path to a local file, it will be streamed directly to the client
-		 * resource => a PHP resource (eg. returned by fopen) that will be streamed directly to the client
-		 * content => a string that will be returned
-		 * or NULL if the resource cannot be returned (404)
-		 *
-		 * It is recommended to use X-SendFile inside this method to make things faster.
-		 * @see https://tn123.org/mod_xsendfile/
-		 */
+
 		abstract public function get(string $uri): ?array;
 
-		/**
-		 * Return TRUE if the requested resource exists, or FALSE
-		 *
-		 * @param  string $uri
-		 * @return bool
-		 */
 		abstract public function exists(string $uri): bool;
 
-		/**
-		 * Return the requested resource properties
-		 *
-		 * This method is used for HEAD requests, for PROPFIND, and other places
-		 *
-		 * @param string $uri Path to resource
-		 * @param null|array $requested_properties Properties requested by the client, NULL if all available properties are requested,
-		 * or if specific properties are requested, each item will be a key,
-		 * like 'namespace_url:property_name', eg. 'DAV::getcontentlength' or 'http://owncloud.org/ns:size'
-		 * See Server::BASIC_PROPERTIES for default properties.
-		 * @param int $depth Depth, can be 0 or 1
-		 * @return null|array An array containing the requested properties, each item must have a key
-		 * of the same form as the requested properties.
-		 *
-		 * This method MUST return NULL if the resource does not exist.
-		 * Or it MUST return an array, where the keys are 'namespace_url:property_name' tuples,
-		 * and the value is the content of the property tag.
-		 */
 		abstract public function properties(string $uri, ?array $requested_properties, int $depth): ?array;
 
-		/**
-		 * Store resource properties
-		 * @param string $uri
-		 * @param string $body XML PROPPATCH request, parsing it is up to you
-		 */
 		public function setProperties(string $uri, string $body): void
 		{
 			// By default, properties are not saved
 		}
 
-		/**
-		 * Create or replace a resource
-		 * @param  string $uri     Path to resource
-		 * @param  resource $pointer A PHP file resource containing the sent data (note that this might not always be seekable)
-		 * @param  null|string $hash A MD5 hash of the resource to store, if it is supplied,
-		 * this method should fail with a 400 code WebDAV exception and not proceed to store the resource.
-		 * @param  null|int $mtime The modification timestamp to set on the file
-		 * @return bool Return TRUE if the resource has been created, or FALSE it has just been updated.
-		 */
 		abstract public function put(string $uri, $pointer, ?string $hash, ?int $mtime): bool;
 
-		/**
-		 * Delete a resource
-		 * @param  string $uri
-		 * @return void
-		 */
 		abstract public function delete(string $uri): void;
 
-		/**
-		 * Copy a resource from $uri to $destination
-		 * @param  string $uri
-		 * @param  string $destination
-		 * @return bool TRUE if the destination has been overwritten
-		 */
 		abstract public function copy(string $uri, string $destination): bool;
 
-		/**
-		 * Move (rename) a resource from $uri to $destination
-		 * @param  string $uri
-		 * @param  string $destination
-		 * @return bool TRUE if the destination has been overwritten
-		 */
 		abstract public function move(string $uri, string $destination): bool;
 
-		/**
-		 * Create collection of resources (eg. a directory)
-		 * @param  string $uri
-		 * @return void
-		 */
 		abstract public function mkcol(string $uri): void;
 
-		/**
-		 * Return a list of resources for target $uri
-		 *
-		 * @param  string $uri
-		 * @param  array $properties List of properties requested by client (see ::properties)
-		 * @return iterable An array or other iterable (eg. a generator)
-		 * where each item has a key string containing the name of the resource (eg. file name),
-		 * and the value being an array of properties, or NULL.
-		 *
-		 * If the array value IS NULL, then a subsequent call to properties() will be issued for each element.
-		 */
 		abstract public function list(string $uri, array $properties): iterable;
 
-		/**
-		 * Lock the requested resource
-		 * @param  string $uri   Requested resource
-		 * @param  string $token Unique token given to the client for this resource
-		 * @param  string $scope Locking scope, either ::SHARED_LOCK or ::EXCLUSIVE_LOCK constant
-		 * @return void
-		 */
 		public function lock(string $uri, string $token, string $scope): void
 		{
 			// By default locking is not implemented
 		}
 
-		/**
-		 * Unlock the requested resource
-		 * @param  string $uri   Requested resource
-		 * @param  string $token Unique token sent by the client
-		 * @return void
-		 */
 		public function unlock(string $uri, string $token): void
 		{
 			// By default locking is not implemented
 		}
 
-		/**
-		 * If $token is supplied, this method MUST return ::SHARED_LOCK or ::EXCLUSIVE_LOCK
-		 * if the resource is locked with this token. If the resource is unlocked, or if it is
-		 * locked with another token, it MUST return NULL.
-		 *
-		 * If $token is left NULL, then this method must return ::EXCLUSIVE_LOCK if there is any
-		 * exclusive lock on the resource. If there are no exclusive locks, but one or more
-		 * shared locks, it MUST return ::SHARED_LOCK. If the resource has no lock, it MUST
-		 * return NULL.
-		 *
-		 * @param  string      $uri
-		 * @param  string|null $token
-		 * @return string|null
-		 */
 		public function getLock(string $uri, ?string $token = null): ?string
 		{
 			// By default locking is not implemented, so NULL is always returned
 			return null;
 		}
 	}
+
 }
 
 namespace NanoKaraDAV
@@ -1506,7 +1357,18 @@ namespace NanoKaraDAV
 				case 'DAV::resourcetype':
 					return is_dir($target) ? 'collection' : '';
 				case 'DAV::getlastmodified':
-					return new \DateTime('@' . filemtime($target));
+					if (!$uri && $depth == 0 && is_dir($target)) {
+						$mtime = self::getDirectoryMTime($target);
+					}
+					else {
+						$mtime = filemtime($target);
+					}
+
+					if (!$mtime) {
+						return null;
+					}
+
+					return new \DateTime('@' . $mtime);
 				case 'DAV::displayname':
 					return basename($target);
 				case 'DAV::ishidden':
@@ -1715,6 +1577,30 @@ namespace NanoKaraDAV
 
 			mkdir($target, 0770);
 		}
+
+		static public function getDirectoryMTime(string $path): int
+		{
+			$last = 0;
+			$path = rtrim($path, '/');
+
+			foreach (glob($path . '/*', GLOB_NOSORT) as $f) {
+				if (is_dir($f)) {
+					$m = self::getDirectoryMTime($f);
+
+					if ($m > $last) {
+						$last = $m;
+					}
+				}
+
+				$m = filemtime($f);
+
+				if ($m > $last) {
+					$last = $m;
+				}
+			}
+
+			return $last;
+		}
 	}
 
 	class Server extends \KD2\WebDAV\Server
@@ -1765,12 +1651,12 @@ namespace {
 		$fp = fopen(__FILE__, 'r');
 
 		if ($relative_uri == 'webdav.js') {
-			fseek($fp, 49434, SEEK_SET);
+			fseek($fp, 43642, SEEK_SET);
 			echo fread($fp, 24229);
 		}
 		else {
-			fseek($fp, 49434 + 24229, SEEK_SET);
-			echo fread($fp, 6728);
+			fseek($fp, 43642 + 24229, SEEK_SET);
+			echo fread($fp, 6752);
 		}
 
 		fclose($fp);
@@ -2578,6 +2464,7 @@ th, td {
 	padding: .5em;
 	text-align: left;
 	border: 2px solid var(--g2-color);
+	word-break: break-all;
 }
 
 td.thumb {
