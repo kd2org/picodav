@@ -7,7 +7,7 @@ namespace KD2\WebDAV
 	//__KD2\WebDAV\AbstractStorage__
 }
 
-namespace NanoKaraDAV
+namespace PicoDAV
 {
 	use KD2\WebDAV\AbstractStorage;
 	use KD2\WebDAV\Exception as WebDAV_Exception;
@@ -44,7 +44,7 @@ namespace NanoKaraDAV
 			$files = array_diff($files, $dirs);
 
 			// Remove PHP files from listings
-			$files = array_filter($files, fn($a) => !preg_match('/\.(?:php\d?|phtml|phps)$/i', $a));
+			$files = array_filter($files, fn($a) => !preg_match('/\.(?:php\d?|phtml|phps)$|^\./i', $a));
 
 			if (!$uri) {
 				$files = array_diff($files, ['webdav.js', 'webdav.css']);
@@ -59,6 +59,10 @@ namespace NanoKaraDAV
 
 		public function get(string $uri): ?array
 		{
+			if (substr(basename($uri), 0, 1) == '.') {
+				throw new WebDAV_Exception('Invalid filename', 403);
+			}
+
 			$path = $this->path . $uri;
 
 			if (!file_exists($path)) {
@@ -110,6 +114,14 @@ namespace NanoKaraDAV
 					return new \DateTime('@' . fileatime($target));
 				case 'DAV::creationdate':
 					return new \DateTime('@' . filectime($target));
+				case 'http://owncloud.org/ns:permissions':
+					$permissions = 'G';
+
+					if (is_writeable($target) && !FORCE_READONLY) {
+						$permissions .= 'DNVWCK';
+					}
+
+					return $permissions;
 				case WebDAV::PROP_DIGEST_MD5:
 					if (!is_file($target)) {
 						return null;
@@ -152,6 +164,14 @@ namespace NanoKaraDAV
 		{
 			if (preg_match(self::PUT_IGNORE_PATTERN, basename($uri))) {
 				return false;
+			}
+
+			if (FORCE_READONLY) {
+				throw new WebDAV_Exception('Write access is disabled', 403);
+			}
+
+			if (substr(basename($uri), 0, 1) == '.') {
+				throw new WebDAV_Exception('Invalid filename', 403);
 			}
 
 			$target = $this->path . $uri;
@@ -209,10 +229,22 @@ namespace NanoKaraDAV
 
 		public function delete(string $uri): void
 		{
+			if (FORCE_READONLY) {
+				throw new WebDAV_Exception('Write access is disabled', 403);
+			}
+
+			if (substr(basename($uri), 0, 1) == '.') {
+				throw new WebDAV_Exception('Invalid filename', 403);
+			}
+
 			$target = $this->path . $uri;
 
 			if (!file_exists($target)) {
 				throw new WebDAV_Exception('Target does not exist', 404);
+			}
+
+			if (!is_writeable($target)) {
+				throw new WebDAV_Exception('File permissions says that you cannot delete this, sorry.', 403);
 			}
 
 			if (is_dir($target)) {
@@ -229,6 +261,18 @@ namespace NanoKaraDAV
 
 		public function copymove(bool $move, string $uri, string $destination): bool
 		{
+			if (FORCE_READONLY) {
+				throw new WebDAV_Exception('Write access is disabled', 403);
+			}
+
+			if (substr(basename($uri), 0, 1) == '.') {
+				throw new WebDAV_Exception('Invalid filename', 403);
+			}
+
+			if (substr(basename($destination), 0, 1) == '.') {
+				throw new WebDAV_Exception('Invalid filename', 403);
+			}
+
 			$source = $this->path . $uri;
 			$target = $this->path . $destination;
 			$parent = dirname($target);
@@ -290,6 +334,14 @@ namespace NanoKaraDAV
 
 		public function mkcol(string $uri): void
 		{
+			if (FORCE_READONLY) {
+				throw new WebDAV_Exception('Write access is disabled', 403);
+			}
+
+			if (substr(basename($uri), 0, 1) == '.') {
+				throw new WebDAV_Exception('Invalid filename', 403);
+			}
+
 			if (!disk_free_space($this->path)) {
 				throw new WebDAV_Exception('Your quota is exhausted', 403);
 			}
@@ -349,8 +401,8 @@ namespace NanoKaraDAV
 }
 
 namespace {
-	use NanoKaraDAV\Server;
-	use NanoKaraDAV\Storage;
+	use PicoDAV\Server;
+	use PicoDAV\Storage;
 
 	$uri = strtok($_SERVER['REQUEST_URI'], '?');
 	$root = substr(__DIR__, strlen($_SERVER['DOCUMENT_ROOT']));
@@ -361,6 +413,29 @@ namespace {
 	}
 
 	$relative_uri = ltrim(substr($uri, strlen($root)), '/');
+
+	const DEFAULT_CONFIG = [
+		'FORCE_READONLY' => false,
+	];
+
+	$config = [];
+
+	if (file_exists(__DIR__ . '/.picodav.ini')) {
+		$config = parse_ini_file(__DIR__ . '/.picodav.ini');
+		$config = array_change_key_case($config, \CASE_UPPER);
+	}
+
+	foreach (DEFAULT_CONFIG as $key => $value) {
+		if (array_key_exists($key, $config)) {
+			$value = $config[$key];
+		}
+
+		if (is_bool(DEFAULT_CONFIG[$key])) {
+			$value = boolval($value);
+		}
+
+		define('PicoDAV\\' . $key, $value);
+	}
 
 	if ($relative_uri == 'webdav.js' || $relative_uri == 'webdav.css') {
 		http_response_code(200);
