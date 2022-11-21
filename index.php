@@ -1283,7 +1283,7 @@ namespace KD2\WebDAV
 
 }
 
-namespace NanoKaraDAV
+namespace PicoDAV
 {
 	use KD2\WebDAV\AbstractStorage;
 	use KD2\WebDAV\Exception as WebDAV_Exception;
@@ -1320,7 +1320,7 @@ namespace NanoKaraDAV
 			$files = array_diff($files, $dirs);
 
 			// Remove PHP files from listings
-			$files = array_filter($files, fn($a) => !preg_match('/\.(?:php\d?|phtml|phps)$/i', $a));
+			$files = array_filter($files, fn($a) => !preg_match('/\.(?:php\d?|phtml|phps)$|^\./i', $a));
 
 			if (!$uri) {
 				$files = array_diff($files, ['webdav.js', 'webdav.css']);
@@ -1386,6 +1386,14 @@ namespace NanoKaraDAV
 					return new \DateTime('@' . fileatime($target));
 				case 'DAV::creationdate':
 					return new \DateTime('@' . filectime($target));
+				case 'http://owncloud.org/ns:permissions':
+					$permissions = 'G';
+
+					if (is_writeable($target) && !FORCE_READONLY) {
+						$permissions .= 'DNVWCK';
+					}
+
+					return $permissions;
 				case WebDAV::PROP_DIGEST_MD5:
 					if (!is_file($target)) {
 						return null;
@@ -1428,6 +1436,10 @@ namespace NanoKaraDAV
 		{
 			if (preg_match(self::PUT_IGNORE_PATTERN, basename($uri))) {
 				return false;
+			}
+
+			if (FORCE_READONLY) {
+				throw new WebDAV_Exception('Write access is disabled', 403);
 			}
 
 			$target = $this->path . $uri;
@@ -1485,10 +1497,18 @@ namespace NanoKaraDAV
 
 		public function delete(string $uri): void
 		{
+			if (FORCE_READONLY) {
+				throw new WebDAV_Exception('Write access is disabled', 403);
+			}
+
 			$target = $this->path . $uri;
 
 			if (!file_exists($target)) {
 				throw new WebDAV_Exception('Target does not exist', 404);
+			}
+
+			if (!is_writeable($target)) {
+				throw new WebDAV_Exception('File permissions says that you cannot delete this, sorry.', 403);
 			}
 
 			if (is_dir($target)) {
@@ -1505,6 +1525,10 @@ namespace NanoKaraDAV
 
 		public function copymove(bool $move, string $uri, string $destination): bool
 		{
+			if (FORCE_READONLY) {
+				throw new WebDAV_Exception('Write access is disabled', 403);
+			}
+
 			$source = $this->path . $uri;
 			$target = $this->path . $destination;
 			$parent = dirname($target);
@@ -1566,6 +1590,10 @@ namespace NanoKaraDAV
 
 		public function mkcol(string $uri): void
 		{
+			if (FORCE_READONLY) {
+				throw new WebDAV_Exception('Write access is disabled', 403);
+			}
+
 			if (!disk_free_space($this->path)) {
 				throw new WebDAV_Exception('Your quota is exhausted', 403);
 			}
@@ -1625,8 +1653,8 @@ namespace NanoKaraDAV
 }
 
 namespace {
-	use NanoKaraDAV\Server;
-	use NanoKaraDAV\Storage;
+	use PicoDAV\Server;
+	use PicoDAV\Storage;
 
 	$uri = strtok($_SERVER['REQUEST_URI'], '?');
 	$root = substr(__DIR__, strlen($_SERVER['DOCUMENT_ROOT']));
@@ -1637,6 +1665,29 @@ namespace {
 	}
 
 	$relative_uri = ltrim(substr($uri, strlen($root)), '/');
+
+	const DEFAULT_CONFIG = [
+		'FORCE_READONLY' => false,
+	];
+
+	$config = [];
+
+	if (file_exists(__DIR__ . '/.picodav.ini')) {
+		$config = parse_ini_file(__DIR__ . '/.picodav.ini');
+		$config = array_change_key_case($config, \CASE_UPPER);
+	}
+
+	foreach (DEFAULT_CONFIG as $key => $value) {
+		if (array_key_exists($key, $config)) {
+			$value = $config[$key];
+		}
+
+		if (is_bool(DEFAULT_CONFIG[$key])) {
+			$value = boolval($value);
+		}
+
+		define('PicoDAV\\' . $key, $value);
+	}
 
 	if ($relative_uri == 'webdav.js' || $relative_uri == 'webdav.css') {
 		http_response_code(200);
@@ -1657,11 +1708,11 @@ namespace {
 		$fp = fopen(__FILE__, 'r');
 
 		if ($relative_uri == 'webdav.js') {
-			fseek($fp, 43873, SEEK_SET);
-			echo fread($fp, 24265);
+			fseek($fp, 45051, SEEK_SET);
+			echo fread($fp, 25889);
 		}
 		else {
-			fseek($fp, 43873 + 24265, SEEK_SET);
+			fseek($fp, 45051 + 25889, SEEK_SET);
 			echo fread($fp, 6760);
 		}
 
@@ -1694,8 +1745,8 @@ const WebDAVNavigator = (url, options) => {
 
 	const _ = key => typeof lang_strings != 'undefined' && key in lang_strings ? lang_strings[key] : key;
 
-	const common_buttons = `<input class="rename" type="button" value="${_('Rename')}" />
-		<input class="delete" type="button" value="${_('Delete')}" />`;
+	const rename_button = `<input class="rename" type="button" value="${_('Rename')}" />`;
+	const delete_button = `<input class="delete" type="button" value="${_('Delete')}" />`;
 
 	const edit_button = `<input class="edit" type="button" value="${_('Edit')}" />`;
 
@@ -1718,10 +1769,6 @@ const WebDAVNavigator = (url, options) => {
 
 	const body_tpl = `<h1>%title%</h1>
 		<div class="upload">
-			<input class="mkdir" type="button" value="${_('New directory')}" />
-			<input type="file" style="display: none;" />
-			<input class="mkfile" type="button" value="${_('New text file')}" />
-			<input class="uploadfile" type="button" value="${_('Upload file')}" />
 			<select class="sortorder btn">
 				<option value="name">${_('Sort by name')}</option>
 				<option value="date">${_('Sort by date')}</option>
@@ -1730,13 +1777,18 @@ const WebDAVNavigator = (url, options) => {
 		</div>
 		<table>%table%</table>`;
 
-	const dir_row_tpl = `<tr><td class="thumb"><span class="icon dir"><b>%icon%</b></span></td><th colspan="3"><a href="%uri%">%name%</a></th><td class="buttons"><div></div></td></tr>`;
-	const file_row_tpl = `<tr data-mime="%mime%"><td class="thumb"><span class="icon %icon%"><b>%icon%</b></span></td><th><a href="%uri%">%name%</a></th><td class="size">%size%</td><td>%modified%</td><td class="buttons"><div><a href="%uri%" download class="btn">${_('Download')}</a></div></td></tr>`;
+	const create_buttons = `<input class="mkdir" type="button" value="${_('New directory')}" />
+			<input type="file" style="display: none;" />
+			<input class="mkfile" type="button" value="${_('New text file')}" />
+			<input class="uploadfile" type="button" value="${_('Upload file')}" />`;
+
+	const dir_row_tpl = `<tr data-permissions="%permissions%"><td class="thumb"><span class="icon dir"><b>%icon%</b></span></td><th colspan="2"><a href="%uri%">%name%</a></th><td>%modified%</td><td class="buttons"><div></div></td></tr>`;
+	const file_row_tpl = `<tr data-permissions="%permissions%" data-mime="%mime%"><td class="thumb"><span class="icon %icon%"><b>%icon%</b></span></td><th><a href="%uri%">%name%</a></th><td class="size">%size%</td><td>%modified%</td><td class="buttons"><div><a href="%uri%" download class="btn">${_('Download')}</a></div></td></tr>`;
 
 	const propfind_tpl = `<?xml version="1.0" encoding="UTF-8"?>
-		<D:propfind xmlns:D="DAV:">
+		<D:propfind xmlns:D="DAV:" xmlns:oc="http://owncloud.org/ns">
 			<D:prop>
-				<D:getlastmodified/><D:getcontenttype/><D:getcontentlength/><D:resourcetype/><D:displayname/>
+				<D:getlastmodified/><D:getcontenttype/><D:getcontentlength/><D:resourcetype/><D:displayname/><oc:permissions/>
 			</D:prop>
 		</D:propfind>`;
 
@@ -2040,14 +2092,32 @@ const WebDAVNavigator = (url, options) => {
 
 		var items = [[], []];
 		var title = null;
+		var root_permissions = null;
 
 		xml.querySelectorAll('response').forEach((node) => {
 			var item_uri = normalizeURL(node.querySelector('href').textContent);
+			var props = null;
+
+			node.querySelectorAll('propstat').forEach((propstat) => {
+				if (propstat.querySelector('status').textContent.match(/200/)) {
+					props = propstat;
+				}
+			});
+
+			// This item didn't return any properties, everything is 404?
+			if (!props) {
+				console.error('Cannot find properties for: ' + item_uri);
+				return;
+			}
+
 			var name = item_uri.replace(/\/$/, '').split('/').pop();
 			name = decodeURIComponent(name);
 
+			var permissions = (prop = node.querySelector('permissions')) ? prop.textContent : null;
+
 			if (item_uri == uri) {
 				title = name;
+				root_permissions = permissions;
 				return;
 			}
 
@@ -2061,6 +2131,7 @@ const WebDAVNavigator = (url, options) => {
 				'mime': !is_dir && (prop = node.querySelector('getcontenttype')) ? prop.textContent : null,
 				'modified': (prop = node.querySelector('getlastmodified')) ? new Date(prop.textContent) : null,
 				'is_dir': is_dir,
+				'permissions': permissions,
 			});
 		});
 
@@ -2100,6 +2171,12 @@ const WebDAVNavigator = (url, options) => {
 		}
 
 		items.forEach(item => {
+			// Don't include files we cannot read
+			if (item.permissions !== null && item.permissions.indexOf('G') == -1) {
+				console.error('OC permissions deny read access to this file: ' + item.name, 'Permissions: ', item.permissions);
+				return;
+			}
+
 			var row = item.is_dir ? dir_row_tpl : file_row_tpl;
 			item.size = item.size !== null ? formatBytes(item.size).replace(/ /g, '&nbsp;') : null;
 			item.icon = item.is_dir ? '&#x1F4C1;' : (item.uri.indexOf('.') > 0 ? item.uri.replace(/^.*\.(\w+)$/, '$1').toUpperCase() : '');
@@ -2111,13 +2188,76 @@ const WebDAVNavigator = (url, options) => {
 		document.title = title;
 		document.querySelector('main').innerHTML = template(body_tpl, {'title': html(document.title), 'base_url': base_url, 'table': table});
 
+		var select = $('.sortorder');
+		select.value = sort_order;
+		select.onchange = () => {
+			sort_order = select.value;
+			window.localStorage.setItem('sort_order', sort_order);
+			reloadListing();
+		};
+
+		if (!root_permissions || root_permissions.indexOf('CK') != -1) {
+			$('.upload').insertAdjacentHTML('afterbegin', create_buttons);
+
+			$('.mkdir').onclick = () => {
+				openDialog(mkdir_dialog);
+				document.forms[0].onsubmit = () => {
+					var name = $('input[name=mkdir]').value;
+
+					if (!name) return false;
+
+					name = encodeURIComponent(name);
+
+					req('MKCOL', current_url + name).then(() => openListing(current_url + name + '/'));
+					return false;
+				};
+			};
+
+			$('.mkfile').onclick = () => {
+				openDialog(mkfile_dialog);
+				var t = $('input[name=mkfile]');
+				t.value = '.md';
+				t.focus();
+				t.selectionStart = t.selectionEnd = 0;
+				document.forms[0].onsubmit = () => {
+					var name = t.value;
+
+					if (!name) return false;
+
+					name = encodeURIComponent(name);
+
+					return reqAndReload('PUT', current_url + name, '');
+				};
+			};
+
+			var fi = $('input[type=file]');
+
+			$('.uploadfile').onclick = () => fi.click();
+
+			fi.onchange = () => {
+				if (!fi.files.length) return;
+
+				var body = new Blob(fi.files);
+				var name = fi.files[0].name;
+
+				name = encodeURIComponent(name);
+
+				return reqAndReload('PUT', current_url + name, body);
+			};
+		}
+
 		Array.from($('table').rows).forEach((tr) => {
 			var $$ = (a) => tr.querySelector(a);
 			var file_url = $$('a').href;
 			var file_name = $$('a').innerText;
 			var dir = $$('[colspan]');
 			var mime = !dir ? tr.getAttribute('data-mime') : 'dir';
-			var buttons = $$('td.buttons div')
+			var buttons = $$('td.buttons div');
+			var permissions = tr.getAttribute('data-permissions');
+
+			if (permissions == 'null') {
+				permissions = null;
+			}
 
 			if (dir) {
 				$$('a').onclick = () => {
@@ -2129,6 +2269,7 @@ const WebDAVNavigator = (url, options) => {
 			// For back link
 			if (dir && $$('a').getAttribute('href').length < uri.length) {
 				dir.setAttribute('colspan', 4);
+				tr.querySelector('td:last-child').remove();
 				tr.querySelector('td:last-child').remove();
 				return;
 			}
@@ -2142,7 +2283,43 @@ const WebDAVNavigator = (url, options) => {
 			}
 
 			// Add rename/delete buttons
-			buttons.insertAdjacentHTML('afterbegin', common_buttons);
+			if (!permissions || permissions.indexOf('NV') != -1) {
+				buttons.insertAdjacentHTML('afterbegin', rename_button);
+
+				$$('.rename').onclick = () => {
+					openDialog(rename_dialog);
+					let t = $('input[name=rename]');
+					t.value = file_name;
+					t.focus();
+					t.selectionStart = 0;
+					t.selectionEnd = file_name.lastIndexOf('.');
+					document.forms[0].onsubmit = () => {
+						var name = t.value;
+
+						if (!name) return false;
+
+						name = encodeURIComponent(name);
+						name = name.replace(/%2F/, '/');
+
+						var dest = current_url + name;
+						dest = normalizeURL(dest);
+
+						return reqAndReload('MOVE', file_url, '', {'Destination': dest});
+					};
+				};
+
+			}
+
+			if (!permissions || permissions.indexOf('D') != -1) {
+				buttons.insertAdjacentHTML('afterbegin', delete_button);
+
+				$$('.delete').onclick = (e) => {
+					openDialog(delete_dialog);
+					document.forms[0].onsubmit = () => {
+						return reqAndReload('DELETE', file_url);
+					};
+				};
+			}
 
 			var view_url, edit_url;
 
@@ -2180,135 +2357,53 @@ const WebDAVNavigator = (url, options) => {
 				$$('a').download = file_name;
 			}
 
-			if (mime.match(/^text\/|application\/x-empty/)) {
-				buttons.insertAdjacentHTML('beforeend', edit_button);
+			if (!permissions || permissions.indexOf('W') != -1) {
+				if ( mime.match(/^text\/|application\/x-empty/)) {
+					buttons.insertAdjacentHTML('beforeend', edit_button);
 
-				$$('.edit').onclick = (e) => {
-					req('GET', file_url).then((r) => r.text().then((t) => {
-						let md = file_url.match(/\.md$/);
-						openDialog(md ? markdown_dialog : edit_dialog);
-						var txt = $('textarea[name=edit]');
-						txt.value = t;
+					$$('.edit').onclick = (e) => {
+						req('GET', file_url).then((r) => r.text().then((t) => {
+							let md = file_url.match(/\.md$/);
+							openDialog(md ? markdown_dialog : edit_dialog);
+							var txt = $('textarea[name=edit]');
+							txt.value = t;
 
-						// Markdown editor
-						if (md) {
-							let pre = $('#md');
+							// Markdown editor
+							if (md) {
+								let pre = $('#md');
 
-							txt.oninput = () => {
-								pre.innerHTML = microdown.parse(html(txt.value));
+								txt.oninput = () => {
+									pre.innerHTML = microdown.parse(html(txt.value));
+								};
+
+								txt.oninput();
+
+								// Sync scroll, not perfect but better than nothing
+								txt.onscroll = (e) => {
+									var p = e.target.scrollTop / (e.target.scrollHeight - e.target.offsetHeight);
+									var target = e.target == pre ? txt : pre;
+									target.scrollTop = p * (target.scrollHeight - target.offsetHeight);
+									e.preventDefault();
+									return false;
+								};
+							}
+
+							document.forms[0].onsubmit = () => {
+								var content = txt.value;
+
+								return reqAndReload('PUT', file_url, content);
 							};
+						}));
+					};
+				}
+				else if (edit_url = wopi_getEditURL(file_url, mime)) {
+					buttons.insertAdjacentHTML('beforeend', edit_button);
 
-							txt.oninput();
-
-							// Sync scroll, not perfect but better than nothing
-							txt.onscroll = (e) => {
-								var p = e.target.scrollTop / (e.target.scrollHeight - e.target.offsetHeight);
-								var target = e.target == pre ? txt : pre;
-								target.scrollTop = p * (target.scrollHeight - target.offsetHeight);
-								e.preventDefault();
-								return false;
-							};
-						}
-
-						document.forms[0].onsubmit = () => {
-							var content = txt.value;
-
-							return reqAndReload('PUT', file_url, content);
-						};
-					}));
-				};
+					$$('.icon').classList.add('document');
+					$$('.edit').onclick = () => { wopi_open(file_url, edit_url); return false; };
+				}
 			}
-			else if (edit_url = wopi_getEditURL(file_url, mime)) {
-				buttons.insertAdjacentHTML('beforeend', edit_button);
-
-				$$('.icon').classList.add('document');
-				$$('.edit').onclick = () => { wopi_open(file_url, edit_url); return false; };
-			}
-
-			$$('.delete').onclick = (e) => {
-				openDialog(delete_dialog);
-				document.forms[0].onsubmit = () => {
-					return reqAndReload('DELETE', file_url);
-				};
-			};
-
-			$$('.rename').onclick = () => {
-				openDialog(rename_dialog);
-				let t = $('input[name=rename]');
-				t.value = file_name;
-				t.focus();
-				t.selectionStart = 0;
-				t.selectionEnd = file_name.lastIndexOf('.');
-				document.forms[0].onsubmit = () => {
-					var name = t.value;
-
-					if (!name) return false;
-
-					name = encodeURIComponent(name);
-					name = name.replace(/%2F/, '/');
-
-					var dest = current_url + name;
-					dest = normalizeURL(dest);
-
-					return reqAndReload('MOVE', file_url, '', {'Destination': dest});
-				};
-			};
-
 		});
-
-		$('.mkdir').onclick = () => {
-			openDialog(mkdir_dialog);
-			document.forms[0].onsubmit = () => {
-				var name = $('input[name=mkdir]').value;
-
-				if (!name) return false;
-
-				name = encodeURIComponent(name);
-
-				req('MKCOL', current_url + name).then(() => openListing(current_url + name + '/'));
-				return false;
-			};
-		};
-
-		$('.mkfile').onclick = () => {
-			openDialog(mkfile_dialog);
-			var t = $('input[name=mkfile]');
-			t.value = '.md';
-			t.focus();
-			t.selectionStart = t.selectionEnd = 0;
-			document.forms[0].onsubmit = () => {
-				var name = t.value;
-
-				if (!name) return false;
-
-				name = encodeURIComponent(name);
-
-				return reqAndReload('PUT', current_url + name, '');
-			};
-		};
-
-		var select = $('.sortorder');
-		select.value = sort_order;
-		select.onchange = () => {
-			sort_order = select.value;
-			window.localStorage.setItem('sort_order', sort_order);
-			reloadListing();
-		};
-
-		var fi = $('input[type=file]');
-
-		$('.uploadfile').onclick = () => fi.click();
-
-		fi.onchange = () => {
-			if (!fi.files.length) return;
-
-			var body = new Blob(fi.files);
-			var name = fi.files[0].name;
-
-			name = encodeURIComponent(name);
-
-			return reqAndReload('PUT', current_url + name, body);
-		};
 	};
 
 	var current_url = url;
