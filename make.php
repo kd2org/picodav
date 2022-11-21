@@ -17,6 +17,7 @@ $php = file_get_contents('server.php');
 $php = strtr($php, [
 	'//__KD2\WebDAV\Server__' => clean_php_source('lib/KD2/WebDAV/Server.php'),
 	'//__KD2\WebDAV\AbstractStorage__' => clean_php_source('lib/KD2/WebDAV/AbstractStorage.php'),
+	'/*__HTACCESS__*/' => var_export(file_get_contents('.htaccess'), true),
 	'__JS_SIZE__' => filesize('webdav.js'),
 	'__CSS_SIZE__' => filesize('webdav.css'),
 ]);

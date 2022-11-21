@@ -1297,10 +1297,40 @@ namespace PicoDAV
 		const PUT_IGNORE_PATTERN = '!^~(?:lock\.|^\._)|^(?:\.DS_Store|Thumbs\.db|desktop\.ini)$!';
 
 		protected string $path;
+		protected ?string $user = null;
+
+		public array $users = [];
 
 		public function __construct()
 		{
 			$this->path = __DIR__ . '/';
+		}
+
+		public function auth(): bool
+		{
+			if (ANONYMOUS_WRITE && ANONYMOUS_READ) {
+				return true;
+			}
+
+			if ($this->user) {
+				return true;
+			}
+
+			$user = $_SERVER['PHP_AUTH_USER'] ?? null;
+			$password = $_SERVER['PHP_AUTH_PW'] ?? null;
+
+			$hash = $this->users[$user]['password'] ?? null;
+
+			if (!$hash) {
+				return false;
+			}
+
+			if (!password_verify($password, $hash)) {
+				return false;
+			}
+
+			$this->user = $user;
+			return true;
 		}
 
 		static protected function glob(string $path, string $pattern = '', int $flags = 0): array
@@ -1309,22 +1339,65 @@ namespace PicoDAV
 			return glob($path . $pattern, $flags);
 		}
 
+		public function canRead(string $uri): bool
+		{
+			if (in_array($uri, INTERNAL_FILES)) {
+				return false;
+			}
+
+			if (preg_match('/\.(?:php\d?|phtml|phps)$|^\./i', $uri)) {
+				return false;
+			}
+
+			if (ANONYMOUS_READ) {
+				return true;
+			}
+
+			if ($this->auth()) {
+				return true;
+			}
+
+			return false;
+		}
+
+		public function canWrite(string $uri): bool
+		{
+			if (!$this->user && !ANONYMOUS_WRITE) {
+				return false;
+			}
+
+			if (!$this->canRead($uri)) {
+				return false;
+			}
+
+			if (ANONYMOUS_WRITE) {
+				return true;
+			}
+
+			if (!empty($this->users[$this->user]['write'])) {
+				return true;
+			}
+
+			return false;
+		}
+
 		public function list(string $uri, ?array $properties): iterable
 		{
+			if (!$this->canRead($uri)) {
+				throw new WebDAV_Exception('Access forbidden', 403);
+			}
+
 			$dirs = self::glob($this->path . $uri, '/*', \GLOB_ONLYDIR);
 			$dirs = array_map('basename', $dirs);
+			$dirs = array_filter($dirs, fn($a) => $this->canRead(ltrim($uri . '/' . $a, '/')));
 			natcasesort($dirs);
 
 			$files = self::glob($this->path . $uri, '/*');
 			$files = array_map('basename', $files);
 			$files = array_diff($files, $dirs);
 
-			// Remove PHP files from listings
-			$files = array_filter($files, fn($a) => !preg_match('/\.(?:php\d?|phtml|phps)$|^\./i', $a));
-
-			if (!$uri) {
-				$files = array_diff($files, ['webdav.js', 'webdav.css']);
-			}
+			// Remove PHP files and dot-files from listings
+			$files = array_filter($files, fn($a) => $this->canRead(ltrim($uri . '/' . $a, '/')));
 
 			natcasesort($files);
 
@@ -1335,6 +1408,10 @@ namespace PicoDAV
 
 		public function get(string $uri): ?array
 		{
+			if (!$this->canRead($uri)) {
+				throw new WebDAV_Exception('Access forbidden', 403);
+			}
+
 			$path = $this->path . $uri;
 
 			if (!file_exists($path)) {
@@ -1389,7 +1466,7 @@ namespace PicoDAV
 				case 'http://owncloud.org/ns:permissions':
 					$permissions = 'G';
 
-					if (is_writeable($target) && !FORCE_READONLY) {
+					if (is_writeable($target) && $this->canWrite($uri)) {
 						$permissions .= 'DNVWCK';
 					}
 
@@ -1438,8 +1515,8 @@ namespace PicoDAV
 				return false;
 			}
 
-			if (FORCE_READONLY) {
-				throw new WebDAV_Exception('Write access is disabled', 403);
+			if (!$this->canWrite($uri)) {
+				throw new WebDAV_Exception('Access forbidden', 403);
 			}
 
 			$target = $this->path . $uri;
@@ -1497,8 +1574,8 @@ namespace PicoDAV
 
 		public function delete(string $uri): void
 		{
-			if (FORCE_READONLY) {
-				throw new WebDAV_Exception('Write access is disabled', 403);
+			if (!$this->canWrite($uri)) {
+				throw new WebDAV_Exception('Access forbidden', 403);
 			}
 
 			$target = $this->path . $uri;
@@ -1525,8 +1602,12 @@ namespace PicoDAV
 
 		public function copymove(bool $move, string $uri, string $destination): bool
 		{
-			if (FORCE_READONLY) {
-				throw new WebDAV_Exception('Write access is disabled', 403);
+			if (!$this->canWrite($uri)) {
+				throw new WebDAV_Exception('Access forbidden', 403);
+			}
+
+			if (!$this->canWrite($destination)) {
+				throw new WebDAV_Exception('Access forbidden', 403);
 			}
 
 			$source = $this->path . $uri;
@@ -1590,8 +1671,8 @@ namespace PicoDAV
 
 		public function mkcol(string $uri): void
 		{
-			if (FORCE_READONLY) {
-				throw new WebDAV_Exception('Write access is disabled', 403);
+			if (!$this->canWrite($uri)) {
+				throw new WebDAV_Exception('Access forbidden', 403);
 			}
 
 			if (!disk_free_space($this->path)) {
@@ -1649,6 +1730,20 @@ namespace PicoDAV
 
 			return $out;
 		}
+
+		function error(WebDAV_Exception $e)
+		{
+			if ($e->getCode() == 403 && !$this->storage->auth() && count($this->storage->users)) {
+				$user = $_SERVER['PHP_AUTH_USER'] ?? null;
+
+				http_response_code(401);
+				header('WWW-Authenticate: Basic realm="Please login"');
+				echo '<h2>Error 401</h2><h1>You need to login to access this.</h1>';
+				return;
+			}
+
+			parent::error($e);
+		}
 	}
 }
 
@@ -1666,27 +1761,18 @@ namespace {
 
 	$relative_uri = ltrim(substr($uri, strlen($root)), '/');
 
-	const DEFAULT_CONFIG = [
-		'FORCE_READONLY' => false,
-	];
+	if (!empty($_SERVER['SERVER_SOFTWARE']) && stristr($_SERVER['SERVER_SOFTWARE'], 'apache') && !file_exists(__DIR__ . '/.htaccess')) {
+		file_put_contents(__DIR__ . '/.htaccess', 'DirectoryIndex disabled
 
-	$config = [];
+RedirectMatch 404 \\.picodav\\.ini
 
-	if (file_exists(__DIR__ . '/.picodav.ini')) {
-		$config = parse_ini_file(__DIR__ . '/.picodav.ini');
-		$config = array_change_key_case($config, \CASE_UPPER);
-	}
-
-	foreach (DEFAULT_CONFIG as $key => $value) {
-		if (array_key_exists($key, $config)) {
-			$value = $config[$key];
-		}
-
-		if (is_bool(DEFAULT_CONFIG[$key])) {
-			$value = boolval($value);
-		}
-
-		define('PicoDAV\\' . $key, $value);
+RewriteEngine On
+RewriteBase /
+RewriteCond %{REQUEST_FILENAME} !-f [OR]
+RewriteCond %{REQUEST_URI} \\.picodav\\.ini [OR]
+RewriteCond %{REQUEST_METHOD} !GET
+RewriteRule ^.*$ /index.php [END]
+');
 	}
 
 	if ($relative_uri == 'webdav.js' || $relative_uri == 'webdav.css') {
@@ -1708,11 +1794,11 @@ namespace {
 		$fp = fopen(__FILE__, 'r');
 
 		if ($relative_uri == 'webdav.js') {
-			fseek($fp, 45051, SEEK_SET);
+			fseek($fp, 48399, SEEK_SET);
 			echo fread($fp, 25889);
 		}
 		else {
-			fseek($fp, 45051 + 25889, SEEK_SET);
+			fseek($fp, 48399 + 25889, SEEK_SET);
 			echo fread($fp, 6760);
 		}
 
@@ -1721,8 +1807,70 @@ namespace {
 		exit;
 	}
 
+	const CONFIG_FILE = __DIR__ . '/.picodav.ini';
+	const INTERNAL_FILES = ['.picodav.ini', 'index.php', 'webdav.js', 'webdav.css'];
+
+	const DEFAULT_CONFIG = [
+		'ANONYMOUS_READ' => false,
+		'ANONYMOUS_WRITE' => false,
+	];
+
+	$config = [];
+	$storage = new Storage;
+
+
+	if (file_exists(CONFIG_FILE)) {
+		$config = parse_ini_file(CONFIG_FILE, true);
+		$users = array_filter($config, 'is_array');
+		$config = array_diff_key($config, $users);
+		$config = array_change_key_case($config, \CASE_UPPER);
+		$replace = [];
+
+		// Encrypt plaintext passwords
+		foreach ($users as $name => $properties) {
+			if (isset($properties['password']) && substr($properties['password'], 0, 1) != '$') {
+				$users[$name]['password'] = $replace[$name] = password_hash($properties['password'], null);
+			}
+		}
+
+		if (count($replace)) {
+			$lines = file(CONFIG_FILE);
+			$current = null;
+
+			foreach ($lines as &$line) {
+				if (preg_match('/^\s*\[(\w+)\]\s*$/', $line, $match)) {
+					$current = $match[1];
+					continue;
+				}
+
+				if ($current && isset($replace[$current]) && preg_match('/^\s*password\s*=/', $line)) {
+					$line = sprintf("password = %s\n", var_export($replace[$current], true));
+				}
+			}
+
+			unset($line, $current);
+
+			file_put_contents(CONFIG_FILE, implode('', $lines));
+		}
+
+		$storage->users = $users;
+	}
+
+	foreach (DEFAULT_CONFIG as $key => $value) {
+		if (array_key_exists($key, $config)) {
+			$value = $config[$key];
+		}
+
+		if (is_bool(DEFAULT_CONFIG[$key])) {
+			$value = boolval($value);
+		}
+
+		define('PicoDAV\\' . $key, $value);
+	}
+
+
 	$dav = new Server;
-	$dav->setStorage(new Storage);
+	$dav->setStorage($storage);
 
 	$dav->setBaseURI($root);
 
