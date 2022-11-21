@@ -1,0 +1,10 @@
+DirectoryIndex disabled
+
+RedirectMatch 404 \.picodav\.ini
+
+RewriteEngine On
+RewriteBase /
+RewriteCond %{REQUEST_FILENAME} !-f [OR]
+RewriteCond %{REQUEST_URI} \.picodav\.ini [OR]
+RewriteCond %{REQUEST_METHOD} !GET
+RewriteRule ^.*$ /index.php [END]
