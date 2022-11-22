@@ -1784,14 +1784,30 @@ namespace PicoDAV
 			return $out;
 		}
 
-		function error(WebDAV_Exception $e)
+		public function route(?string $uri = null): bool
+		{
+			if (!ANONYMOUS_WRITE && !ANONYMOUS_READ) {
+				$this->requireAuth();
+				return true;
+			}
+
+			return parent::route($uri);
+		}
+
+		protected function requireAuth(): void
+		{
+			if ($this->storage->auth()) {
+				return;
+			}
+
+			http_response_code(401);
+			header('WWW-Authenticate: Basic realm="Please login"');
+			echo '<h2>Error 401</h2><h1>You need to login to access this.</h1>';
+		}
+
+		public function error(WebDAV_Exception $e)
 		{
 			if ($e->getCode() == 403 && !$this->storage->auth() && count($this->storage->users)) {
-				$user = $_SERVER['PHP_AUTH_USER'] ?? null;
-
-				http_response_code(401);
-				header('WWW-Authenticate: Basic realm="Please login"');
-				echo '<h2>Error 401</h2><h1>You need to login to access this.</h1>';
 				return;
 			}
 
@@ -1851,11 +1867,11 @@ RewriteRule ^.*$ /index.php [END]
 		$fp = fopen(__FILE__, 'r');
 
 		if ($relative_uri == '.webdav/webdav.js') {
-			fseek($fp, 49803, SEEK_SET);
+			fseek($fp, 50046, SEEK_SET);
 			echo fread($fp, 27769);
 		}
 		else {
-			fseek($fp, 49803 + 27769, SEEK_SET);
+			fseek($fp, 50046 + 27769, SEEK_SET);
 			echo fread($fp, 6988);
 		}
 
