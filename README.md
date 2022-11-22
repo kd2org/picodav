@@ -151,7 +151,7 @@ This is designed to work best with Apache web servers. If you are using another 
 
 How KaraDAV is different? Well, KaraDAV:
 
-* provides support for NextCloud and ownCloud apps
+* provides support for NextCloud and ownCloud client apps
 * allows to edit office documents using Collabora or OnlyOffice
 * each user have their own data directory
 * has a nice web UI to manage users
