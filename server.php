@@ -510,7 +510,7 @@ namespace PicoDAV
 
 		public function route(?string $uri = null): bool
 		{
-			if (!ANONYMOUS_WRITE && !ANONYMOUS_READ) {
+			if (!ANONYMOUS_WRITE && !ANONYMOUS_READ && !$this->storage->auth()) {
 				$this->requireAuth();
 				return true;
 			}
@@ -520,10 +520,6 @@ namespace PicoDAV
 
 		protected function requireAuth(): void
 		{
-			if ($this->storage->auth()) {
-				return;
-			}
-
 			http_response_code(401);
 			header('WWW-Authenticate: Basic realm="Please login"');
 			echo '<h2>Error 401</h2><h1>You need to login to access this.</h1>';
