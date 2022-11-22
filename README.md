@@ -18,6 +18,7 @@ If you drop the [`index.php`](https://github.com/kd2org/picodav/raw/main/index.p
 	* Create directories
 	* MarkDown live preview
 	* Preview of images, text, MarkDown and PDF
+	* Download all files of a directory
 * Manage users and password with only a text file!
 * Restrict users to some directories, control where they can write!
 
