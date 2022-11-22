@@ -145,6 +145,25 @@ Access to PHP files is also disabled for the same reasons.
 
 This is designed to work best with Apache web servers. If you are using another web server, you'll have to adapt the rules described in `.htaccess` to your own server.
 
+## See also: KaraDAV
+
+[KaraDAV](https://github.com/kd2org/karadav/) is another WebDAV server built by me, using the same library and the same web UI to manage files.
+
+How KaraDAV is different? Well, KaraDAV:
+
+* provides support for NextCloud and ownCloud apps
+* allows to edit office documents using Collabora or OnlyOffice
+* each user have their own data directory
+* has a nice web UI to manage users
+* has support for custom WebDAV properties
+* has support for per-user quota
+* supports LDAP authentication
+* uses SQLite3 for its database
+* supports WebDAV locks (meaning no-one can edit the same file as you at the same time)
+* can use NextCloud/ownCloud chunk uploads (uploading of large files in smaller chunks)
+
+So PicoDAV is just a smaller subset, aimed at providing quick and easy access to files on a web server, specifically with mass hosting providers, who often only provide slow FTP access.
+
 ## Dependencies
 
 This software includes the KD2\WebDAV class from the [KD2FW package](https://fossil.kd2.org/kd2fw/).
