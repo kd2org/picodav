@@ -4,7 +4,11 @@ RedirectMatch 404 \.picodav\.ini
 
 RewriteEngine On
 RewriteBase /
-RewriteCond %{REQUEST_FILENAME} !-f [OR]
-RewriteCond %{REQUEST_URI} \.picodav\.ini [OR]
-RewriteCond %{REQUEST_METHOD} !GET
+
+# Uncomment the following 2 lignes to make things a bit faster for
+# downloading files, AND you don't use PicoDAV users to manage access,
+# but a regular .htpasswd file and config for your web server.
+#RewriteCond %{REQUEST_FILENAME} !-f [OR]
+#RewriteCond %{REQUEST_METHOD} !GET
+
 RewriteRule ^.*$ /index.php [END]
