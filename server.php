@@ -578,7 +578,7 @@ namespace {
 	const INTERNAL_FILES = ['.picodav.ini', 'index.php', 'webdav.js', 'webdav.css'];
 
 	const DEFAULT_CONFIG = [
-		'ANONYMOUS_READ' => false,
+		'ANONYMOUS_READ' => true,
 		'ANONYMOUS_WRITE' => false,
 	];
 

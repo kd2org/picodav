@@ -1847,11 +1847,11 @@ RewriteRule ^.*$ /index.php [END]
 		$fp = fopen(__FILE__, 'r');
 
 		if ($relative_uri == 'webdav.js') {
-			fseek($fp, 49575, SEEK_SET);
+			fseek($fp, 49574, SEEK_SET);
 			echo fread($fp, 25889);
 		}
 		else {
-			fseek($fp, 49575 + 25889, SEEK_SET);
+			fseek($fp, 49574 + 25889, SEEK_SET);
 			echo fread($fp, 6760);
 		}
 
@@ -1864,7 +1864,7 @@ RewriteRule ^.*$ /index.php [END]
 	const INTERNAL_FILES = ['.picodav.ini', 'index.php', 'webdav.js', 'webdav.css'];
 
 	const DEFAULT_CONFIG = [
-		'ANONYMOUS_READ' => false,
+		'ANONYMOUS_READ' => true,
 		'ANONYMOUS_WRITE' => false,
 	];
 
