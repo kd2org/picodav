@@ -1778,7 +1778,7 @@ namespace PicoDAV
 			$out = parent::html_directory($uri, $list);
 
 			if (null !== $out) {
-				$out = str_replace('<body>', sprintf('<body style="opacity: 0"><script type="text/javascript" src="%s/webdav.js"></script>', rtrim($this->base_uri, '/')), $out);
+				$out = str_replace('<body>', sprintf('<body style="opacity: 0"><script type="text/javascript" src="%s/.webdav/webdav.js"></script>', rtrim($this->base_uri, '/')), $out);
 			}
 
 			return $out;
@@ -1821,17 +1821,21 @@ RedirectMatch 404 \\.picodav\\.ini
 
 RewriteEngine On
 RewriteBase /
-RewriteCond %{REQUEST_FILENAME} !-f [OR]
-RewriteCond %{REQUEST_URI} \\.picodav\\.ini [OR]
-RewriteCond %{REQUEST_METHOD} !GET
+
+# Uncomment the following 2 lignes to make things a bit faster for
+# downloading files, AND you don\'t use PicoDAV users to manage access,
+# but a regular .htpasswd file and config for your web server.
+#RewriteCond %{REQUEST_FILENAME} !-f [OR]
+#RewriteCond %{REQUEST_METHOD} !GET
+
 RewriteRule ^.*$ /index.php [END]
 ');
 	}
 
-	if ($relative_uri == 'webdav.js' || $relative_uri == 'webdav.css') {
+	if ($relative_uri == '.webdav/webdav.js' || $relative_uri == '.webdav/webdav.css') {
 		http_response_code(200);
 
-		if ($relative_uri == 'webdav.js') {
+		if ($relative_uri == '.webdav/webdav.js') {
 			header('Content-Type: text/javascript', true);
 		}
 		else {
@@ -1846,12 +1850,12 @@ RewriteRule ^.*$ /index.php [END]
 
 		$fp = fopen(__FILE__, 'r');
 
-		if ($relative_uri == 'webdav.js') {
-			fseek($fp, 49574, SEEK_SET);
+		if ($relative_uri == '.webdav/webdav.js') {
+			fseek($fp, 49805, SEEK_SET);
 			echo fread($fp, 25889);
 		}
 		else {
-			fseek($fp, 49574 + 25889, SEEK_SET);
+			fseek($fp, 49805 + 25889, SEEK_SET);
 			echo fread($fp, 6760);
 		}
 
@@ -1861,7 +1865,7 @@ RewriteRule ^.*$ /index.php [END]
 	}
 
 	const CONFIG_FILE = __DIR__ . '/.picodav.ini';
-	const INTERNAL_FILES = ['.picodav.ini', 'index.php', 'webdav.js', 'webdav.css'];
+	define('PicoDAV\INTERNAL_FILES', ['.picodav.ini', basename(__FILE__), '.webdav/webdav.js', '.webdav/webdav.css']);
 
 	const DEFAULT_CONFIG = [
 		'ANONYMOUS_READ' => true,

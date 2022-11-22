@@ -39,10 +39,6 @@ The only requirement is PHP 7.4, or more recent (8.0 and 8.1 are also supported,
 
 Note that by default, write access is disabled for security purposes. See below to enable write access.
 
-### Other web servers than Apache
-
-This is designed to work best with Apache web servers. If you are using another web server, you'll have to adapt the rules described in `.htaccess` to your own server.
-
 ### Configuration
 
 PicoDAV accepts a configuration file named `.picodav.ini`.
@@ -132,11 +128,21 @@ Please note: if you do this, **EVERYONE** visiting your PicoDAV URL will be able
 
 ### Other notes
 
-If you don't want to use the included users feature, you can also restrict access by using a [`.htpasswd` Apache file](https://www.cyberciti.biz/faq/create-update-user-authentication-files/).
+#### Using the web-server auth instead PicoDAV auth
+
+If you don't want to use the provided auth (users and passwords) feature, you can also restrict access by using a [`.htpasswd` Apache file](https://www.cyberciti.biz/faq/create-update-user-authentication-files/), or any other mean provided by your web server.
+
+If you do this, you might want to uncomment the two commented `RewriteCond` lines in `.htaccess`, this way all downloads of files will happen directly from the web server, and not going through PHP, making things a bit faster.
+
+#### Security
 
 For security purposes, the WebDAV server will not allow to read or delete UNIX hidden files (with the file name beginning with a dot, eg. `.htaccess` etc.).
 
 Access to PHP files is also disabled for the same reasons.
+
+### Other web servers than Apache
+
+This is designed to work best with Apache web servers. If you are using another web server, you'll have to adapt the rules described in `.htaccess` to your own server.
 
 ## Dependencies
 

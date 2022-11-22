@@ -502,7 +502,7 @@ namespace PicoDAV
 			$out = parent::html_directory($uri, $list);
 
 			if (null !== $out) {
-				$out = str_replace('<body>', sprintf('<body style="opacity: 0"><script type="text/javascript" src="%s/webdav.js"></script>', rtrim($this->base_uri, '/')), $out);
+				$out = str_replace('<body>', sprintf('<body style="opacity: 0"><script type="text/javascript" src="%s/.webdav/webdav.js"></script>', rtrim($this->base_uri, '/')), $out);
 			}
 
 			return $out;
@@ -542,10 +542,10 @@ namespace {
 		file_put_contents(__DIR__ . '/.htaccess', /*__HTACCESS__*/);
 	}
 
-	if ($relative_uri == 'webdav.js' || $relative_uri == 'webdav.css') {
+	if ($relative_uri == '.webdav/webdav.js' || $relative_uri == '.webdav/webdav.css') {
 		http_response_code(200);
 
-		if ($relative_uri == 'webdav.js') {
+		if ($relative_uri == '.webdav/webdav.js') {
 			header('Content-Type: text/javascript', true);
 		}
 		else {
@@ -560,7 +560,7 @@ namespace {
 
 		$fp = fopen(__FILE__, 'r');
 
-		if ($relative_uri == 'webdav.js') {
+		if ($relative_uri == '.webdav/webdav.js') {
 			fseek($fp, __PHP_SIZE__, SEEK_SET);
 			echo fread($fp, __JS_SIZE__);
 		}
@@ -575,7 +575,7 @@ namespace {
 	}
 
 	const CONFIG_FILE = __DIR__ . '/.picodav.ini';
-	const INTERNAL_FILES = ['.picodav.ini', 'index.php', 'webdav.js', 'webdav.css'];
+	define('PicoDAV\INTERNAL_FILES', ['.picodav.ini', basename(__FILE__), '.webdav/webdav.js', '.webdav/webdav.css']);
 
 	const DEFAULT_CONFIG = [
 		'ANONYMOUS_READ' => true,
