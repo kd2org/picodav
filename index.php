@@ -1842,7 +1842,7 @@ RewriteRule ^.*$ /index.php [END]
 			header('Content-Type: text/css', true);
 		}
 
-		$seconds_to_cache = 3600 * 24 * 365;
+		$seconds_to_cache = 3600 * 24 * 5;
 		$ts = gmdate("D, d M Y H:i:s", time() + $seconds_to_cache) . " GMT";
 		header("Expires: " . $ts);
 		header("Pragma: cache");
@@ -1851,12 +1851,12 @@ RewriteRule ^.*$ /index.php [END]
 		$fp = fopen(__FILE__, 'r');
 
 		if ($relative_uri == '.webdav/webdav.js') {
-			fseek($fp, 49805, SEEK_SET);
-			echo fread($fp, 27579);
+			fseek($fp, 49803, SEEK_SET);
+			echo fread($fp, 27769);
 		}
 		else {
-			fseek($fp, 49805 + 27579, SEEK_SET);
-			echo fread($fp, 6801);
+			fseek($fp, 49803 + 27769, SEEK_SET);
+			echo fread($fp, 6988);
 		}
 
 		fclose($fp);
@@ -2082,8 +2082,9 @@ const WebDAVNavigator = (url, options) => {
 	const get_url = async (url) => {
 		var progress = (e) => {
 			var p = $('progress');
-			if (!p) return;
+			if (!p || e.loaded <= 0) return;
 			p.value = e.loaded;
+			$('.progress_bytes').innerHTML = formatBytes(e.loaded);
 		};
 
 		if (temp_object_url) {
@@ -2224,7 +2225,10 @@ const WebDAVNavigator = (url, options) => {
 			return true;
 		};
 
-		openDialog(`<h3>${html(name)}</h3><progress max="${size}"></progress>`, false);
+		openDialog(`<p class="spinner"><span></span></p>
+			<h3>${html(name)}</h3>
+			<progress max="${size}"></progress>
+			<p><span class="progress_bytes"></span> / ${formatBytes(size)}</p>`, false);
 
 		await get_url(url);
 		const a = document.createElement('a');
@@ -3121,11 +3125,12 @@ input[name=rename], input[name=paste_name] {
 	width: 0;
 	height: 0;
 	border: none;
-	display: flex;
+	align-items: center;
+	justify-content: center;
 	opacity: 0;
 }
 
-.loading .bg::after {
+.loading .bg::after, .spinner span::after {
 	display: block;
 	content: " ";
 	width: 70px;
@@ -3146,6 +3151,17 @@ input[name=rename], input[name=paste_name] {
 	border-radius: 50%;
 	background: var(--bg-color);
 	position: absolute;
+}
+
+.spinner {
+	align-items: center;
+	justify-content: center;
+	display: flex;
+}
+
+.spinner span::after {
+	width: 30px;
+	height: 30px;
 }
 
 .loading .bg, .dragging .bg, .dialog .bg {
