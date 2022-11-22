@@ -1852,10 +1852,10 @@ RewriteRule ^.*$ /index.php [END]
 
 		if ($relative_uri == '.webdav/webdav.js') {
 			fseek($fp, 49805, SEEK_SET);
-			echo fread($fp, 25889);
+			echo fread($fp, 26310);
 		}
 		else {
-			fseek($fp, 49805 + 25889, SEEK_SET);
+			fseek($fp, 49805 + 26310, SEEK_SET);
 			echo fread($fp, 6760);
 		}
 
@@ -1979,6 +1979,7 @@ const WebDAVNavigator = (url, options) => {
 				<option value="date">${_('Sort by date')}</option>
 				<option value="size">${_('Sort by size')}</option>
 			</select>
+			<input type="button" class="download_all" value="${_('Download all files')}" />
 		</div>
 		<table>%table%</table>`;
 
@@ -2181,6 +2182,17 @@ const WebDAVNavigator = (url, options) => {
 		a.remove();
 	};
 
+	const download_all = async () => {
+		for (var i = 0; i < items.length; i++) {
+			var item = items[i];
+			if (item.is_dir) {
+				continue;
+			}
+
+			await download(item.name, item.uri)
+		}
+	};
+
 	const preview = (type, url) => {
 		if (type.match(/^image\//)) {
 			openDialog(`<img src="${url}" />`, false);
@@ -2295,7 +2307,7 @@ const WebDAVNavigator = (url, options) => {
 	const buildListing = (uri, xml) => {
 		uri = normalizeURL(uri);
 
-		var items = [[], []];
+		items = [[], []];
 		var title = null;
 		var root_permissions = null;
 
@@ -2400,6 +2412,13 @@ const WebDAVNavigator = (url, options) => {
 			window.localStorage.setItem('sort_order', sort_order);
 			reloadListing();
 		};
+
+		if (!items.length) {
+			$('.download_all').disabled = true;
+		}
+		else {
+			$('.download_all').onclick = download_all;
+		}
 
 		if (!root_permissions || root_permissions.indexOf('CK') != -1) {
 			$('.upload').insertAdjacentHTML('afterbegin', create_buttons);
@@ -2611,6 +2630,7 @@ const WebDAVNavigator = (url, options) => {
 		});
 	};
 
+	var items = [[], []];
 	var current_url = url;
 	var base_url = url;
 	const user = options.user || null;
