@@ -6,7 +6,7 @@ If you drop the [`index.php`](https://github.com/kd2org/picodav/raw/main/index.p
 
 ![Web UI screenshot](https://raw.githubusercontent.com/kd2org/webdav-manager.js/main/scr_desktop.png)
 
-* Single-file WebDAV server!
+* Single-file WebDAV server! Only 85 KB!
 * No database!
 * Very fast and lightweight!
 * Compatible with tons of apps!
