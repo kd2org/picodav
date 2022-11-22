@@ -725,7 +725,7 @@ namespace KD2\WebDAV
 				$uri = trim(rtrim($this->base_uri, '/') . '/' . ltrim($uri, '/'), '/');
 				$path = '/' . str_replace('%2F', '/', rawurlencode($uri));
 
-				if (($item['DAV::resourcetype'] ?? null) == 'collection') {
+				if (($item['DAV::resourcetype'] ?? null) == 'collection' && $path != '/') {
 					$path .= '/';
 				}
 
@@ -1353,8 +1353,20 @@ namespace PicoDAV
 				return true;
 			}
 
-			if ($this->auth()) {
+			if (!$this->auth()) {
+				return false;
+			}
+
+			$restrict = $this->users[$this->user]['restrict'] ?? [];
+
+			if (!is_array($restrict) || empty($restrict)) {
 				return true;
+			}
+
+			foreach ($restrict as $match) {
+				if (0 === strpos($uri, $match)) {
+					return true;
+				}
 			}
 
 			return false;
@@ -1362,7 +1374,7 @@ namespace PicoDAV
 
 		public function canWrite(string $uri): bool
 		{
-			if (!$this->user && !ANONYMOUS_WRITE) {
+			if (!$this->auth() && !ANONYMOUS_WRITE) {
 				return false;
 			}
 
@@ -1374,7 +1386,36 @@ namespace PicoDAV
 				return true;
 			}
 
-			if (!empty($this->users[$this->user]['write'])) {
+			if (!$this->auth() || empty($this->users[$this->user]['write'])) {
+				return false;
+			}
+
+			$restrict = $this->users[$this->user]['restrict_write'] ?? [];
+
+			if (!is_array($restrict) || empty($restrict)) {
+				return true;
+			}
+
+			foreach ($restrict as $match) {
+				if (0 === strpos($uri, $match)) {
+					return true;
+				}
+			}
+
+			return false;
+		}
+
+		public function canOnlyCreate(string $uri): bool
+		{
+			$restrict = $this->users[$this->user]['restrict_write'] ?? [];
+
+			if (in_array($uri, $restrict, true)) {
+				return true;
+			}
+
+			$restrict = $this->users[$this->user]['restrict'] ?? [];
+
+			if (in_array($uri, $restrict, true)) {
 				return true;
 			}
 
@@ -1383,13 +1424,13 @@ namespace PicoDAV
 
 		public function list(string $uri, ?array $properties): iterable
 		{
-			if (!$this->canRead($uri)) {
-				throw new WebDAV_Exception('Access forbidden', 403);
+			if (!$this->canRead($uri . '/')) {
+				//throw new WebDAV_Exception('Access forbidden', 403);
 			}
 
 			$dirs = self::glob($this->path . $uri, '/*', \GLOB_ONLYDIR);
 			$dirs = array_map('basename', $dirs);
-			$dirs = array_filter($dirs, fn($a) => $this->canRead(ltrim($uri . '/' . $a, '/')));
+			$dirs = array_filter($dirs, fn($a) => $this->canRead(ltrim($uri . '/' . $a, '/') . '/'));
 			natcasesort($dirs);
 
 			$files = self::glob($this->path . $uri, '/*');
@@ -1403,6 +1444,7 @@ namespace PicoDAV
 
 			$files = array_flip(array_merge($dirs, $files));
 			$files = array_map(fn($a) => null, $files);
+
 			return $files;
 		}
 
@@ -1452,8 +1494,6 @@ namespace PicoDAV
 					}
 
 					return new \DateTime('@' . $mtime);
-				case 'DAV::displayname':
-					return basename($target);
 				case 'DAV::ishidden':
 					return basename($target)[0] == '.';
 				case 'DAV::getetag':
@@ -1466,12 +1506,23 @@ namespace PicoDAV
 				case 'http://owncloud.org/ns:permissions':
 					$permissions = 'G';
 
+					if (is_dir($target)) {
+						$uri .= '/';
+					}
+
 					if (is_writeable($target) && $this->canWrite($uri)) {
-						$permissions .= 'DNVWCK';
+						// If the directory is one of the restricted paths,
+						// then we can only do stuff INSIDE, and not delete/rename the directory itself
+						if ($this->canOnlyCreate($uri)) {
+							$permissions .= 'CK';
+						}
+						else {
+							$permissions .= 'DNVWCK';
+						}
 					}
 
 					return $permissions;
-				case WebDAV::PROP_DIGEST_MD5:
+				case Server::PROP_DIGEST_MD5:
 					if (!is_file($target)) {
 						return null;
 					}
@@ -1578,6 +1629,10 @@ namespace PicoDAV
 				throw new WebDAV_Exception('Access forbidden', 403);
 			}
 
+			if ($this->canOnlyCreate($uri)) {
+				throw new WebDAV_Exception('Access forbidden', 403);
+			}
+
 			$target = $this->path . $uri;
 
 			if (!file_exists($target)) {
@@ -1602,11 +1657,9 @@ namespace PicoDAV
 
 		public function copymove(bool $move, string $uri, string $destination): bool
 		{
-			if (!$this->canWrite($uri)) {
-				throw new WebDAV_Exception('Access forbidden', 403);
-			}
-
-			if (!$this->canWrite($destination)) {
+			if (!$this->canWrite($uri)
+				|| !$this->canWrite($destination)
+				|| $this->canOnlyCreate($uri)) {
 				throw new WebDAV_Exception('Access forbidden', 403);
 			}
 
@@ -1794,11 +1847,11 @@ RewriteRule ^.*$ /index.php [END]
 		$fp = fopen(__FILE__, 'r');
 
 		if ($relative_uri == 'webdav.js') {
-			fseek($fp, 48399, SEEK_SET);
+			fseek($fp, 49575, SEEK_SET);
 			echo fread($fp, 25889);
 		}
 		else {
-			fseek($fp, 48399 + 25889, SEEK_SET);
+			fseek($fp, 49575 + 25889, SEEK_SET);
 			echo fread($fp, 6760);
 		}
 

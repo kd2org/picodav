@@ -6,6 +6,21 @@ If you drop the [`index.php`](./index.php) file in a directory of your web-serve
 
 ![Web UI screenshot](https://raw.githubusercontent.com/kd2org/webdav-manager.js/main/scr_desktop.png)
 
+* Single-file WebDAV server!
+* No database!
+* Very fast and lightweight!
+* Compatible with tons of apps!
+* Manage files and directories from a web browser:
+	* Upload directly from browser, using paste or drag and drop
+	* Rename
+	* Delete
+	* Create and edit text files
+	* Create directories
+	* MarkDown live preview
+	* Preview of images, text, MarkDown and PDF
+* Manage users and password with only a text file!
+* Restrict users to some directories, control where they can write!
+
 ## WebDAV clients
 
 You can use any WebDAV client, but we recommend these:
@@ -70,19 +85,38 @@ All users have read access to everything by default.
 
 #### Restricting users to some directories
 
-You can also limit users in which directories and files they can access by using the `restrict` and `restrict_write` configuration directives:
+If you want something more detailed, you can also limit users in which directories and files they can access by using the `restrict[]` and `restrict_write[]` configuration directives.
+
+These are tables, so you can have more than one directory restriction, don't forget the `[]`!
+
+In the following example, the user will only be able to read the `constitution` directory and not write anything:
 
 ```
-[emusk]
-password = youSuck
+[olympe]
+password = abcd
 write = false
-restrict[] = 'kill-twitter/'
+restrict[] = 'constitution/'
+```
 
-[pouyane]
-password = youArePaidWayTooMuch
-write = false
-restrict[] = 'total/'
-restrict_write[] = 'total/kill-the-planet/'
+Here the user will be able to only read and write in the `constitution` and `images` directories:
+
+```
+[olympe]
+password = abcd
+write = true
+restrict[] = 'constitution/'
+restrict[] = 'images/'
+```
+
+And here, she will be able to only read from the `constitution` directory and write in the `constitution/book` and `constitution/summary` directories:
+
+```
+[olympe]
+password = abcd
+write = true
+restrict[] = 'constitution/'
+restrict_write[] = 'constitution/book/'
+restrict_write[] = 'constitution/summary/'
 ```
 
 ### Allow unrestricted access to everyone
