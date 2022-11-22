@@ -1868,7 +1868,7 @@ RewriteRule ^.*$ /index.php [END]
 		}
 		else {
 			fseek($fp, 50022 + 27769, SEEK_SET);
-			echo fread($fp, 6988);
+			echo fread($fp, 7004);
 		}
 
 		fclose($fp);
@@ -3140,6 +3140,7 @@ input[name=rename], input[name=paste_name] {
 	align-items: center;
 	justify-content: center;
 	opacity: 0;
+	display: flex;
 }
 
 .loading .bg::after, .spinner span::after {
