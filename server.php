@@ -310,7 +310,7 @@ namespace PicoDAV
 			$size = 0;
 			$quota = disk_free_space($this->path);
 
-			$tmp_file = '.tmp.' . sha1($target);
+			$tmp_file = $this->path . '.tmp.' . sha1($target);
 			$out = fopen($tmp_file, 'w');
 
 			while (!feof($pointer)) {
