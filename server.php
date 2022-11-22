@@ -552,7 +552,7 @@ namespace {
 			header('Content-Type: text/css', true);
 		}
 
-		$seconds_to_cache = 3600 * 24 * 365;
+		$seconds_to_cache = 3600 * 24 * 5;
 		$ts = gmdate("D, d M Y H:i:s", time() + $seconds_to_cache) . " GMT";
 		header("Expires: " . $ts);
 		header("Pragma: cache");
