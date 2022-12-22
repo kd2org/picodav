@@ -268,7 +268,7 @@ namespace PicoDAV
 			}
 
 			if (null === $properties) {
-				$properties = WebDAV::BASIC_PROPERTIES;
+				$properties = Server::BASIC_PROPERTIES;
 			}
 
 			$out = [];

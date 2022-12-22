@@ -1544,7 +1544,7 @@ namespace PicoDAV
 			}
 
 			if (null === $properties) {
-				$properties = WebDAV::BASIC_PROPERTIES;
+				$properties = Server::BASIC_PROPERTIES;
 			}
 
 			$out = [];
@@ -1586,7 +1586,7 @@ namespace PicoDAV
 			$size = 0;
 			$quota = disk_free_space($this->path);
 
-			$tmp_file = '.tmp.' . sha1($target);
+			$tmp_file = $this->path . '.tmp.' . sha1($target);
 			$out = fopen($tmp_file, 'w');
 
 			while (!feof($pointer)) {
@@ -1863,11 +1863,11 @@ RewriteRule ^.*$ /index.php [END]
 		$fp = fopen(__FILE__, 'r');
 
 		if ($relative_uri == '.webdav/webdav.js') {
-			fseek($fp, 50022, SEEK_SET);
+			fseek($fp, 50036, SEEK_SET);
 			echo fread($fp, 27769);
 		}
 		else {
-			fseek($fp, 50022 + 27769, SEEK_SET);
+			fseek($fp, 50036 + 27769, SEEK_SET);
 			echo fread($fp, 7004);
 		}
 
