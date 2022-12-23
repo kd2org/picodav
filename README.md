@@ -46,6 +46,12 @@ PicoDAV accepts a configuration file named `.picodav.ini`.
 
 It should be in the same directory as `index.php`.
 
+It accepts these options:
+
+* `ANONYMOUS_READ` (boolean, see below)
+* `ANONYMOUS_WRITE` (boolean, see below)
+* `HTTP_LOG` (string, set to a file path to log HTTP requests for debug purposes)
+
 ### Users and passwords
 
 By default, the WebDAV server is accessible to everyone.
