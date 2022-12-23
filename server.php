@@ -533,6 +533,26 @@ namespace PicoDAV
 
 			parent::error($e);
 		}
+
+		protected string $_log = '';
+
+		public function log(string $message, ...$params): void
+		{
+			if (!HTTP_LOG_FILE) {
+				return;
+			}
+
+			$this->_log .= vsprintf($message, $params) . "\n";
+		}
+
+		public function __destruct()
+		{
+			if (!$this->_log) {
+				return;
+			}
+
+			file_put_contents(HTTP_LOG_FILE, $this->_log, \FILE_APPEND);
+		}
 	}
 }
 
@@ -592,6 +612,7 @@ namespace {
 	const DEFAULT_CONFIG = [
 		'ANONYMOUS_READ' => true,
 		'ANONYMOUS_WRITE' => false,
+		'HTTP_LOG_FILE' => null,
 	];
 
 	$config = [];

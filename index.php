@@ -1809,6 +1809,26 @@ namespace PicoDAV
 
 			parent::error($e);
 		}
+
+		protected string $_log = '';
+
+		public function log(string $message, ...$params): void
+		{
+			if (!HTTP_LOG_FILE) {
+				return;
+			}
+
+			$this->_log .= vsprintf($message, $params) . "\n";
+		}
+
+		public function __destruct()
+		{
+			if (!$this->_log) {
+				return;
+			}
+
+			file_put_contents(HTTP_LOG_FILE, $this->_log, \FILE_APPEND);
+		}
 	}
 }
 
@@ -1863,11 +1883,11 @@ RewriteRule ^.*$ /index.php [END]
 		$fp = fopen(__FILE__, 'r');
 
 		if ($relative_uri == '.webdav/webdav.js') {
-			fseek($fp, 50036, SEEK_SET);
+			fseek($fp, 50403, SEEK_SET);
 			echo fread($fp, 27769);
 		}
 		else {
-			fseek($fp, 50036 + 27769, SEEK_SET);
+			fseek($fp, 50403 + 27769, SEEK_SET);
 			echo fread($fp, 7004);
 		}
 
@@ -1882,6 +1902,7 @@ RewriteRule ^.*$ /index.php [END]
 	const DEFAULT_CONFIG = [
 		'ANONYMOUS_READ' => true,
 		'ANONYMOUS_WRITE' => false,
+		'HTTP_LOG_FILE' => null,
 	];
 
 	$config = [];
