@@ -1478,6 +1478,8 @@ namespace PicoDAV
 			$target = $this->path . $uri;
 
 			switch ($name) {
+				case 'DAV::displayname':
+					return basename($uri);
 				case 'DAV::getcontentlength':
 					return is_dir($target) ? null : filesize($target);
 				case 'DAV::getcontenttype':
@@ -1888,11 +1890,11 @@ RewriteRule ^.*$ /index.php [END]
 		$fp = fopen(__FILE__, 'r');
 
 		if ($relative_uri == '.webdav/webdav.js') {
-			fseek($fp, 50637, SEEK_SET);
+			fseek($fp, 50694, SEEK_SET);
 			echo fread($fp, 27769);
 		}
 		else {
-			fseek($fp, 50637 + 27769, SEEK_SET);
+			fseek($fp, 50694 + 27769, SEEK_SET);
 			echo fread($fp, 7004);
 		}
 
