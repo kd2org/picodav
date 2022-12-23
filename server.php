@@ -197,6 +197,8 @@ namespace PicoDAV
 			$target = $this->path . $uri;
 
 			switch ($name) {
+				case 'DAV::displayname':
+					return basename($uri);
 				case 'DAV::getcontentlength':
 					return is_dir($target) ? null : filesize($target);
 				case 'DAV::getcontenttype':
