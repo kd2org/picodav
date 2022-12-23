@@ -50,7 +50,7 @@ It accepts these options:
 
 * `ANONYMOUS_READ` (boolean, see below)
 * `ANONYMOUS_WRITE` (boolean, see below)
-* `HTTP_LOG` (string, set to a file path to log HTTP requests for debug purposes)
+* `HTTP_LOG_FILE` (string, set to a file path to log HTTP requests for debug purposes)
 
 ### Users and passwords
 

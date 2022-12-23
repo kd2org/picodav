@@ -438,7 +438,7 @@ namespace KD2\WebDAV
 				$this->log('Using gzip output compression');
 				$gzip = deflate_init(ZLIB_ENCODING_GZIP, ['level' => 9]);
 
-				$fp = fopen('php://memory', 'wb');
+				$fp = fopen('php://temp', 'wb');
 
 				while (!feof($file['resource'])) {
 					fwrite($fp, deflate_add($gzip, fread($file['resource'], 8192), ZLIB_NO_FLUSH));
@@ -1883,11 +1883,11 @@ RewriteRule ^.*$ /index.php [END]
 		$fp = fopen(__FILE__, 'r');
 
 		if ($relative_uri == '.webdav/webdav.js') {
-			fseek($fp, 50403, SEEK_SET);
+			fseek($fp, 50401, SEEK_SET);
 			echo fread($fp, 27769);
 		}
 		else {
-			fseek($fp, 50403 + 27769, SEEK_SET);
+			fseek($fp, 50401 + 27769, SEEK_SET);
 			echo fread($fp, 7004);
 		}
 
