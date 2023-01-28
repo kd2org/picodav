@@ -25,9 +25,9 @@ namespace PicoDAV
 
 		public array $users = [];
 
-		public function __construct()
+		public function __construct(string $path)
 		{
-			$this->path = __DIR__ . '/';
+			$this->path = $path . '/';
 		}
 
 		public function auth(): bool
@@ -563,7 +563,10 @@ namespace {
 	use PicoDAV\Storage;
 
 	$uri = strtok($_SERVER['REQUEST_URI'], '?');
-	$root = substr(__DIR__, strlen($_SERVER['DOCUMENT_ROOT']));
+	$self = $_SERVER['SCRIPT_FILENAME'];
+	$self_dir = dirname($self);
+	$root = substr(dirname($_SERVER['SCRIPT_FILENAME']), strlen($_SERVER['DOCUMENT_ROOT']));
+	$root = '/' . ltrim($root, '/');
 
 	if (false !== strpos($uri, '..')) {
 		http_response_code(404);
@@ -572,8 +575,8 @@ namespace {
 
 	$relative_uri = ltrim(substr($uri, strlen($root)), '/');
 
-	if (!empty($_SERVER['SERVER_SOFTWARE']) && stristr($_SERVER['SERVER_SOFTWARE'], 'apache') && !file_exists(__DIR__ . '/.htaccess')) {
-		file_put_contents(__DIR__ . '/.htaccess', /*__HTACCESS__*/);
+	if (!empty($_SERVER['SERVER_SOFTWARE']) && stristr($_SERVER['SERVER_SOFTWARE'], 'apache') && !file_exists($self_dir . '/.htaccess')) {
+		file_put_contents($self_dir . '/.htaccess', str_replace('index.php', basename($self), /*__HTACCESS__*/));
 	}
 
 	if ($relative_uri == '.webdav/webdav.js' || $relative_uri == '.webdav/webdav.css') {
@@ -608,8 +611,8 @@ namespace {
 		exit;
 	}
 
-	const CONFIG_FILE = __DIR__ . '/.picodav.ini';
-	define('PicoDAV\INTERNAL_FILES', ['.picodav.ini', basename(__FILE__), '.webdav/webdav.js', '.webdav/webdav.css']);
+	$config_file = $self_dir . '/.picodav.ini';
+	define('PicoDAV\INTERNAL_FILES', ['.picodav.ini', $self_dir, '.webdav/webdav.js', '.webdav/webdav.css']);
 
 	const DEFAULT_CONFIG = [
 		'ANONYMOUS_READ' => true,
@@ -618,11 +621,10 @@ namespace {
 	];
 
 	$config = [];
-	$storage = new Storage;
+	$storage = new Storage($self_dir);
 
-
-	if (file_exists(CONFIG_FILE)) {
-		$config = parse_ini_file(CONFIG_FILE, true);
+	if (file_exists($config_file)) {
+		$config = parse_ini_file($config_file, true);
 		$users = array_filter($config, 'is_array');
 		$config = array_diff_key($config, $users);
 		$config = array_change_key_case($config, \CASE_UPPER);
@@ -636,7 +638,7 @@ namespace {
 		}
 
 		if (count($replace)) {
-			$lines = file(CONFIG_FILE);
+			$lines = file($config_file);
 			$current = null;
 
 			foreach ($lines as &$line) {
@@ -652,7 +654,7 @@ namespace {
 
 			unset($line, $current);
 
-			file_put_contents(CONFIG_FILE, implode('', $lines));
+			file_put_contents($config_file, implode('', $lines));
 		}
 
 		$storage->users = $users;
@@ -671,7 +673,7 @@ namespace {
 	}
 
 
-	$dav = new Server;
+	$dav = new Server();
 	$dav->setStorage($storage);
 
 	$dav->setBaseURI($root);
