@@ -59,6 +59,16 @@ namespace KD2\WebDAV
 			$this->base_uri = rtrim($uri, '/') . '/';
 		}
 
+		protected function extendExecutionTime(): void
+		{
+			if (false === strpos(@ini_get('disable_functions'), 'set_time_limit')) {
+				@set_time_limit(3600);
+			}
+
+			@ini_set('max_execution_time', '3600');
+			@ini_set('max_input_time', '3600');
+		}
+
 		protected function _prefix(string $uri): string
 		{
 			if (!$this->prefix) {
@@ -213,6 +223,8 @@ namespace KD2\WebDAV
 				header('X-OC-MTime: accepted');
 			}
 
+			$this->extendExecutionTime();
+
 			$created = $this->storage->put($uri, fopen('php://input', 'r'), $hash, $mtime);
 
 			$prop = $this->storage->properties($uri, ['DAV::getetag'], 0);
@@ -326,6 +338,8 @@ namespace KD2\WebDAV
 			if (!isset($file['content']) && !isset($file['resource']) && !isset($file['path'])) {
 				throw new \RuntimeException('Invalid file array returned by ::get()');
 			}
+
+			$this->extendExecutionTime();
 
 			$length = $start = $end = null;
 			$gzip = false;
@@ -463,14 +477,16 @@ namespace KD2\WebDAV
 				header('Content-Length: ' . $length, true);
 			}
 
+			$block_size = 8192*4;
+
 			while (!feof($file['resource']) && ($end === null || $end > 0)) {
-				$l = $end !== null ? min(8192, $end) : 8192;
+				$l = $end !== null ? min($block_size, $end) : $block_size;
 
 				echo fread($file['resource'], $l);
 				flush();
 
 				if (null !== $end) {
-					$end -= 8192;
+					$end -= $block_size;
 				}
 			}
 
@@ -1890,11 +1906,11 @@ RewriteRule ^.*$ /index.php [END]
 		$fp = fopen(__FILE__, 'r');
 
 		if ($relative_uri == '.webdav/webdav.js') {
-			fseek($fp, 50694, SEEK_SET);
+			fseek($fp, 51058, SEEK_SET);
 			echo fread($fp, 27769);
 		}
 		else {
-			fseek($fp, 50694 + 27769, SEEK_SET);
+			fseek($fp, 51058 + 27769, SEEK_SET);
 			echo fread($fp, 7004);
 		}
 
