@@ -196,11 +196,20 @@ namespace KD2\WebDAV
 			}
 
 			$hash = null;
+			$hash_algo = null;
 
 			// Support for checksum matching
 			// https://dcache.org/old/manuals/UserGuide-6.0/webdav.shtml#checksums
 			if (!empty($_SERVER['HTTP_CONTENT_MD5'])) {
 				$hash = bin2hex(base64_decode($_SERVER['HTTP_CONTENT_MD5']));
+				$hash_algo = 'MD5';
+			}
+			// Support for ownCloud/NextCloud checksum
+			// https://github.com/owncloud-archive/documentation/issues/2964
+			elseif (!empty($_SERVER['HTTP_OC_CHECKSUM'])
+				&& preg_match('/MD5:[a-f0-9]{32}|SHA1:[a-f0-9]{40}/', $_SERVER['HTTP_OC_CHECKSUM'], $match)) {
+				$hash_algo = strtok($match[0], ':');
+				$hash = strtok(false);
 			}
 
 			$uri = $this->_prefix($uri);
@@ -216,7 +225,8 @@ namespace KD2\WebDAV
 				}
 			}
 
-			// Specific to NextCloud/ownCloud
+			// Specific to NextCloud/ownCloud, to allow setting file mtime
+			// This expects a UNIX timestamp
 			$mtime = (int)($_SERVER['HTTP_X_OC_MTIME'] ?? 0) ?: null;
 
 			if ($mtime) {
@@ -225,7 +235,7 @@ namespace KD2\WebDAV
 
 			$this->extendExecutionTime();
 
-			$created = $this->storage->put($uri, fopen('php://input', 'r'), $hash, $mtime);
+			$created = $this->storage->put($uri, fopen('php://input', 'r'), $hash_algo, $hash, $mtime);
 
 			$prop = $this->storage->properties($uri, ['DAV::getetag'], 0);
 
@@ -1273,7 +1283,7 @@ namespace KD2\WebDAV
 			// By default, properties are not saved
 		}
 
-		abstract public function put(string $uri, $pointer, ?string $hash, ?int $mtime): bool;
+		abstract public function put(string $uri, $pointer, ?string $hash_algo, ?string $hash, ?int $mtime): bool;
 
 		abstract public function delete(string $uri): void;
 
@@ -1546,7 +1556,7 @@ namespace PicoDAV
 
 					return $permissions;
 				case Server::PROP_DIGEST_MD5:
-					if (!is_file($target)) {
+					if (!is_file($target) || is_dir($target) || !is_readable($target)) {
 						return null;
 					}
 
@@ -1583,7 +1593,7 @@ namespace PicoDAV
 			return $out;
 		}
 
-		public function put(string $uri, $pointer, ?string $hash, ?int $mtime): bool
+		public function put(string $uri, $pointer, ?string $hash_algo, ?string $hash, ?int $mtime): bool
 		{
 			if (preg_match(self::PUT_IGNORE_PATTERN, basename($uri))) {
 				return false;
@@ -1631,9 +1641,13 @@ namespace PicoDAV
 				@unlink($tmp_file);
 				throw new WebDAV_Exception('Your quota is exhausted', 403);
 			}
-			elseif ($hash && md5_file($tmp_file) != $hash) {
+			elseif ($hash && $hash_algo == 'MD5' && md5_file($tmp_file) != $hash) {
 				@unlink($tmp_file);
 				throw new WebDAV_Exception('The data sent does not match the supplied MD5 hash', 400);
+			}
+			elseif ($hash && $hash_algo == 'SHA1' && sha1_file($tmp_file) != $hash) {
+				@unlink($tmp_file);
+				throw new WebDAV_Exception('The data sent does not match the supplied SHA1 hash', 400);
 			}
 			else {
 				rename($tmp_file, $target);
@@ -1909,11 +1923,11 @@ RewriteRule ^.*$ /index.php [END]
 		$fp = fopen(__FILE__, 'r');
 
 		if ($relative_uri == '.webdav/webdav.js') {
-			fseek($fp, 51249, SEEK_SET);
-			echo fread($fp, 27769);
+			fseek($fp, 52012, SEEK_SET);
+			echo fread($fp, 27789);
 		}
 		else {
-			fseek($fp, 51249 + 27769, SEEK_SET);
+			fseek($fp, 52012 + 27789, SEEK_SET);
 			echo fread($fp, 7004);
 		}
 
@@ -1991,7 +2005,7 @@ RewriteRule ^.*$ /index.php [END]
 
 	if (!$dav->route($uri)) {
 		http_response_code(404);
-		die('Invalid URL, sorry');
+		die('Unknown URL, sorry.');
 	}
 
 	exit;
@@ -2004,7 +2018,7 @@ const WebDAVNavigator = (url, options) => {
 	// https://github.com/commit-intl/micro-down
 	const microdown=function(){function l(n,e,r){return"<"+n+(r?" "+Object.keys(r).map(function(n){return r[n]?n+'="'+(a(r[n])||"")+'"':""}).join(" "):"")+">"+e+"</"+n+">"}function c(n,e){return e=n.match(/^[+-]/m)?"ul":"ol",n?"<"+e+">"+n.replace(/(?:[+-]|\d+\.) +(.*)\n?(([ \t].*\n?)*)/g,function(n,e,r){return"<li>"+g(e+"\n"+(t=r||"").replace(new RegExp("^"+(t.match(/^\s+/)||"")[0],"gm"),"").replace(o,c))+"</li>";var t})+"</"+e+">":""}function e(r,t,u,c){return function(n,e){return n=n.replace(t,u),l(r,c?c(n):n)}}function t(n,u){return f(n,[/<!--((.|\n)*?)-->/g,"\x3c!--$1--\x3e",/^("""|```)(.*)\n((.*\n)*?)\1/gm,function(n,e,r,t){return'"""'===e?l("div",p(t,u),{class:r}):u&&u.preCode?l("pre",l("code",a(t),{class:r})):l("pre",a(t),{class:r})},/(^>.*\n?)+/gm,e("blockquote",/^> ?(.*)$/gm,"$1",r),/((^|\n)\|.+)+/g,e("table",/^.*(\n\|---.*?)?$/gm,function(n,t){return e("tr",/\|(-?)([^|]*)\1(\|$)?/gm,function(n,e,r){return l(e||t?"th":"td",g(r))})(n.slice(0,n.length-(t||"").length))}),o,c,/#\[([^\]]+?)]/g,'<a name="$1"></a>',/^(#+) +(.*)(?:$)/gm,function(n,e,r){return l("h"+e.length,g(r))},/^(===+|---+)(?=\s*$)/gm,"<hr>"],p,u)}var i=this,a=function(n){return n?n.replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;"):""},o=/(?:(^|\n)([+-]|\d+\.) +(.*(\n[ \t]+.*)*))+/g,g=function c(n,i){var o=[];return n=(n||"").trim().replace(/`([^`]*)`/g,function(n,e){return"\\"+o.push(l("code",a(e)))}).replace(/[!&]?\[([!&]?\[.*?\)|[^\]]*?)]\((.*?)( .*?)?\)|(\w+:\/\/[$\-.+!*'()/,\w]+)/g,function(n,e,r,t,u){return u?i?n:"\\"+o.push(l("a",u,{href:u})):"&"==n[0]?(e=e.match(/^(.+),(.+),([^ \]]+)( ?.+?)?$/),"\\"+o.push(l("iframe","",{width:e[1],height:e[2],frameborder:e[3],class:e[4],src:r,title:t}))):"\\"+o.push("!"==n[0]?l("img","",{src:r,alt:e,title:t}):l("a",c(e,1),{href:r,title:t}))}),n=function r(n){return n.replace(/\\(\d+)/g,function(n,e){return r(o[Number.parseInt(e)-1])})}(i?n:r(n))},r=function t(n){return f(n,[/([*_]{1,3})((.|\n)+?)\1/g,function(n,e,r){return e=e.length,r=t(r),1<e&&(r=l("strong",r)),e%2&&(r=l("em",r)),r},/(~{1,3})((.|\n)+?)\1/g,function(n,e,r){return l([,"u","s","del"][e.length],t(r))},/  \n|\n  /g,"<br>"],t)},f=function(n,e,r,t){for(var u,c=0;c<e.length;){if(u=e[c++].exec(n))return r(n.slice(0,u.index),t)+("string"==typeof e[c]?e[c].replace(/\$(\d)/g,function(n,e){return u[e]}):e[c].apply(i,u))+r(n.slice(u.index+u[0].length),t);c++}return n},p=function(n,e){n=n.replace(/[\r\v\b\f]/g,"").replace(/\\./g,function(n){return"&#"+n.charCodeAt(1)+";"});var r=t(n,e);return r!==n||r.match(/^[\s\n]*$/i)||(r=g(r).replace(/((.|\n)+?)(\n\n+|$)/g,function(n,e){return l("p",e)})),r.replace(/&#(\d+);/g,function(n,e){return String.fromCharCode(parseInt(e))})};return{parse:p,block:t,inline:r,inlineBlock:g}}();
 
-	const PREVIEW_TYPES = /^image\/(png|webp|svg|jpeg|jpg|gif|png)|^application\/pdf|^text\/|^audio\/|^video\//;
+	const PREVIEW_TYPES = /^image\/(png|webp|svg|jpeg|jpg|gif|png)|^application\/pdf|^text\/|^audio\/|^video\/|application\/x-empty/;
 
 	const _ = key => typeof lang_strings != 'undefined' && key in lang_strings ? lang_strings[key] : key;
 
@@ -2703,7 +2717,7 @@ const WebDAVNavigator = (url, options) => {
 			}
 
 			if (!permissions || permissions.indexOf('W') != -1) {
-				if ( mime.match(/^text\/|application\/x-empty/)) {
+				if (mime.match(/^text\/|application\/x-empty/)) {
 					buttons.insertAdjacentHTML('beforeend', edit_button);
 
 					$$('.edit').onclick = (e) => {
