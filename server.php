@@ -249,7 +249,7 @@ namespace PicoDAV
 
 					return $permissions;
 				case Server::PROP_DIGEST_MD5:
-					if (!is_file($target)) {
+					if (!is_file($target) || is_dir($target) || !is_readable($target)) {
 						return null;
 					}
 
@@ -286,7 +286,7 @@ namespace PicoDAV
 			return $out;
 		}
 
-		public function put(string $uri, $pointer, ?string $hash, ?int $mtime): bool
+		public function put(string $uri, $pointer, ?string $hash_algo, ?string $hash, ?int $mtime): bool
 		{
 			if (preg_match(self::PUT_IGNORE_PATTERN, basename($uri))) {
 				return false;
@@ -334,9 +334,13 @@ namespace PicoDAV
 				@unlink($tmp_file);
 				throw new WebDAV_Exception('Your quota is exhausted', 403);
 			}
-			elseif ($hash && md5_file($tmp_file) != $hash) {
+			elseif ($hash && $hash_algo == 'MD5' && md5_file($tmp_file) != $hash) {
 				@unlink($tmp_file);
 				throw new WebDAV_Exception('The data sent does not match the supplied MD5 hash', 400);
+			}
+			elseif ($hash && $hash_algo == 'SHA1' && sha1_file($tmp_file) != $hash) {
+				@unlink($tmp_file);
+				throw new WebDAV_Exception('The data sent does not match the supplied SHA1 hash', 400);
 			}
 			else {
 				rename($tmp_file, $target);
@@ -680,7 +684,7 @@ namespace {
 
 	if (!$dav->route($uri)) {
 		http_response_code(404);
-		die('Invalid URL, sorry');
+		die('Unknown URL, sorry.');
 	}
 
 	exit;

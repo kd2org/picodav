@@ -21,13 +21,14 @@ If you drop the [`index.php`](https://github.com/kd2org/picodav/raw/main/index.p
 	* Download all files of a directory
 * Manage users and password with only a text file!
 * Restrict users to some directories, control where they can write!
+* Support for [rclone](https://rclone.org) as a NextCloud provider
 
 ## WebDAV clients
 
 You can use any WebDAV client, but we recommend these:
 
 * Windows/OSX: [CyberDuck](https://cyberduck.io/download/)
-* Linux: Any file manager should be able to connect to WebDAV (Dolphin, Thunar, Nautilus, etc.), but you can also use [FUSE webdavfs](https://github.com/miquels/webdavfs)
+* Linux: Any file manager should be able to connect to WebDAV (Dolphin, Thunar, Nautilus, etc.), but you can also use [FUSE webdavfs](https://github.com/miquels/webdavfs), or [rclone](https://rclone.org)
 * Android: [RCX](https://f-droid.org/en/packages/io.github.x0b.rcx/) and [DAVx⁵](https://www.davx5.com/), see [the manual](https://manual.davx5.com/webdav_mounts.html)
 
 ## Install
