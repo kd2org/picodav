@@ -235,7 +235,24 @@ namespace KD2\WebDAV
 
 			$this->extendExecutionTime();
 
-			$created = $this->storage->put($uri, fopen('php://input', 'r'), $hash_algo, $hash, $mtime);
+			$stream = fopen('php://input', 'r');
+
+			// mod_fcgid <= 2.3.9 doesn't handle chunked transfer encoding for PUT requests
+			// see https://github.com/kd2org/picodav/issues/6
+			if (strstr($_SERVER['HTTP_TRANSFER_ENCODING'] ?? '', 'chunked') && PHP_SAPI == 'fpm-fcgi') {
+				// We can't seek here
+				// see https://github.com/php/php-src/issues/9441
+				$l = strlen(fread($stream, 1));
+
+				if ($l === 0) {
+					throw new Exception('This server cannot accept "Transfer-Encoding: chunked" uploads (please upgrade to mod_fcgid >= 2.3.10).', 500);
+				}
+
+				// reset stream
+				fseek($stream, 0, SEEK_SET);
+			}
+
+			$created = $this->storage->put($uri, $stream, $hash_algo, $hash, $mtime);
 
 			$prop = $this->storage->properties($uri, ['DAV::getetag'], 0);
 
@@ -1639,7 +1656,7 @@ namespace PicoDAV
 
 			if ($delete) {
 				@unlink($tmp_file);
-				throw new WebDAV_Exception('Your quota is exhausted', 403);
+				throw new WebDAV_Exception('Your quota is exhausted', 507);
 			}
 			elseif ($hash && $hash_algo == 'MD5' && md5_file($tmp_file) != $hash) {
 				@unlink($tmp_file);
@@ -1718,7 +1735,7 @@ namespace PicoDAV
 				$quota = disk_free_space($this->path);
 
 				if (filesize($source) > $quota) {
-					throw new WebDAV_Exception('Your quota is exhausted', 403);
+					throw new WebDAV_Exception('Your quota is exhausted', 507);
 				}
 			}
 
@@ -1766,7 +1783,7 @@ namespace PicoDAV
 			}
 
 			if (!disk_free_space($this->path)) {
-				throw new WebDAV_Exception('Your quota is exhausted', 403);
+				throw new WebDAV_Exception('Your quota is exhausted', 507);
 			}
 
 			$target = $this->path . $uri;
@@ -1923,11 +1940,11 @@ RewriteRule ^.*$ /index.php [END]
 		$fp = fopen(__FILE__, 'r');
 
 		if ($relative_uri == '.webdav/webdav.js') {
-			fseek($fp, 52012, SEEK_SET);
+			fseek($fp, 52608, SEEK_SET);
 			echo fread($fp, 27789);
 		}
 		else {
-			fseek($fp, 52012 + 27789, SEEK_SET);
+			fseek($fp, 52608 + 27789, SEEK_SET);
 			echo fread($fp, 7004);
 		}
 

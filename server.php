@@ -332,7 +332,7 @@ namespace PicoDAV
 
 			if ($delete) {
 				@unlink($tmp_file);
-				throw new WebDAV_Exception('Your quota is exhausted', 403);
+				throw new WebDAV_Exception('Your quota is exhausted', 507);
 			}
 			elseif ($hash && $hash_algo == 'MD5' && md5_file($tmp_file) != $hash) {
 				@unlink($tmp_file);
@@ -411,7 +411,7 @@ namespace PicoDAV
 				$quota = disk_free_space($this->path);
 
 				if (filesize($source) > $quota) {
-					throw new WebDAV_Exception('Your quota is exhausted', 403);
+					throw new WebDAV_Exception('Your quota is exhausted', 507);
 				}
 			}
 
@@ -459,7 +459,7 @@ namespace PicoDAV
 			}
 
 			if (!disk_free_space($this->path)) {
-				throw new WebDAV_Exception('Your quota is exhausted', 403);
+				throw new WebDAV_Exception('Your quota is exhausted', 507);
 			}
 
 			$target = $this->path . $uri;
