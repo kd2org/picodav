@@ -1941,10 +1941,10 @@ RewriteRule ^.*$ /index.php [END]
 
 		if ($relative_uri == '.webdav/webdav.js') {
 			fseek($fp, 52608, SEEK_SET);
-			echo fread($fp, 27789);
+			echo fread($fp, 27798);
 		}
 		else {
-			fseek($fp, 52608 + 27789, SEEK_SET);
+			fseek($fp, 52608 + 27798, SEEK_SET);
 			echo fread($fp, 7004);
 		}
 
@@ -2080,14 +2080,14 @@ const WebDAVNavigator = (url, options) => {
 	const dir_row_tpl = `<tr data-permissions="%permissions%"><td class="thumb"><span class="icon dir"><b>%icon%</b></span></td><th colspan="2"><a href="%uri%">%name%</a></th><td>%modified%</td><td class="buttons"><div></div></td></tr>`;
 	const file_row_tpl = `<tr data-permissions="%permissions%" data-mime="%mime%" data-size="%size%"><td class="thumb"><span class="icon %icon%"><b>%icon%</b></span></td><th><a href="%uri%">%name%</a></th><td class="size">%size_bytes%</td><td>%modified%</td><td class="buttons"><div><a href="%uri%" download class="btn">${_('Download')}</a></div></td></tr>`;
 
-	const propfind_tpl = `<?xml version="1.0" encoding="UTF-8"?>
+	const propfind_tpl = '<'+ `?xml version="1.0" encoding="UTF-8"?>
 		<D:propfind xmlns:D="DAV:" xmlns:oc="http://owncloud.org/ns">
 			<D:prop>
 				<D:getlastmodified/><D:getcontenttype/><D:getcontentlength/><D:resourcetype/><D:displayname/><oc:permissions/>
 			</D:prop>
 		</D:propfind>`;
 
-	const wopi_propfind_tpl = `<?xml version="1.0" encoding="UTF-8"?>
+	const wopi_propfind_tpl = '<' + `?xml version="1.0" encoding="UTF-8"?>
 		<D:propfind xmlns:D="DAV:" xmlns:W="https://interoperability.blob.core.windows.net/files/MS-WOPI/">
 			<D:prop>
 				<W:file-url/><W:token/><W:token-ttl/>
