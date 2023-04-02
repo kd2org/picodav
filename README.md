@@ -71,9 +71,9 @@ password = verySecret
 write = true
 ```
 
-Note that PicoDAV will replace this password with an encrypted version the next time it is accessed, don't worry about that, this is for extra safety, just in case the `.picodav.ini` is accessed by a hacker if you made mistake in your web server configuration.
+Note that PicoDAV will replace this password with a hashed version the next time it is accessed, don't worry about that, this is for extra safety, just in case the `.picodav.ini` is accessed by a hacker if you made mistake in your web server configuration.
 
-Here is an example of the password once it has been encrypted:
+Here is an example of the password once it has been hashed:
 
 ```
 password = '$2y$10$fbdabTjNPN3gMAUlaSEoR.kKHLnh0yMGneuJ7P2AOhSSNr8gUaCPu'
