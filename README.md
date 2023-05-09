@@ -35,9 +35,9 @@ You can use any WebDAV client, but we recommend these:
 
 It's really as simple as it says: just upload the [`index.php`](https://github.com/kd2org/picodav/raw/main/index.php) file to a directory on your web-server, and it will now be available via WebDAV!
 
-If you are using Apache (version 2.3.9 or later is required), a .htaccess file will be created if it does not exist, to redirect requests to `index.php`. If not, you can use 
+If you are using Apache (version 2.3.9 or later is required), a .htaccess file will be created if it does not exist, to redirect requests to `index.php`. If not, you can use the provided `.htaccess` as a basis for your server configuration.
 
-The only requirement is PHP 7.4, or more recent (8.0 and 8.1 are also supported, not tested with PHP 8.2).
+The only requirement is PHP 7.4, or more recent (8.0-8.2 are also supported).
 
 Note that by default, write access is disabled for security purposes. See below to enable write access.
 
