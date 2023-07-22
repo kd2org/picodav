@@ -1367,13 +1367,15 @@ namespace PicoDAV
 			$user = $_SERVER['PHP_AUTH_USER'] ?? null;
 			$password = $_SERVER['PHP_AUTH_PW'] ?? null;
 
-			$hash = $this->users[$user]['password'] ?? null;
-
-			if (!$hash) {
+			if (!array_key_exists($user, $this->users)) {
 				return false;
 			}
 
-			if (!password_verify($password, $hash)) {
+			$hash = $this->users[$user]['password'] ?? null;
+
+			// If no password is set, we accept any password as we consider that a .htaccess/.htpasswd
+			// access has been granted
+			if (null !== $hash && !password_verify($password, $hash)) {
 				return false;
 			}
 
@@ -1940,11 +1942,11 @@ RewriteRule ^.*$ /index.php [END]
 		$fp = fopen(__FILE__, 'r');
 
 		if ($relative_uri == '.webdav/webdav.js') {
-			fseek($fp, 52608, SEEK_SET);
-			echo fread($fp, 27798);
+			fseek($fp, 52782, SEEK_SET);
+			echo fread($fp, 28039);
 		}
 		else {
-			fseek($fp, 52608 + 27798, SEEK_SET);
+			fseek($fp, 52782 + 28039, SEEK_SET);
 			echo fread($fp, 7004);
 		}
 
@@ -2187,11 +2189,13 @@ const WebDAVNavigator = (url, options) => {
 	};
 
 	const wopi_init = async () => {
-		if (!wopi_discovery_url) {
+		try {
+			var d = await reqXML('GET', wopi_discovery_url);
+		}
+		catch (e) {
+			reloadListing();
 			return;
 		}
-
-		var d = await reqXML('GET', wopi_discovery_url);
 
 		d.querySelectorAll('app').forEach(app => {
 			var mime = (a = app.getAttribute('name').match(/^.*\/.*$/)) ? a[0] : null;
@@ -2381,6 +2385,10 @@ const WebDAVNavigator = (url, options) => {
 	};
 
 	const formatDate = (date) => {
+		if (isNaN(date)) {
+			return '';
+		}
+
 		var now = new Date;
 		var nb_hours = (+(now) - +(date)) / 3600 / 1000;
 
@@ -2571,7 +2579,7 @@ const WebDAVNavigator = (url, options) => {
 			$('.download_all').onclick = download_all;
 		}
 
-		if (!root_permissions || root_permissions.indexOf('CK') != -1) {
+		if (!root_permissions || root_permissions.indexOf('C') != -1 || root_permissions.indexOf('K') != -1) {
 			$('.upload').insertAdjacentHTML('afterbegin', create_buttons);
 
 			$('.mkdir').onclick = () => {
@@ -2793,6 +2801,9 @@ const WebDAVNavigator = (url, options) => {
 	if (location.pathname.indexOf(base_url) === 0) {
 		current_url = location.pathname;
 	}
+	else if (options.start_url) {
+		current_url = options.start_url;
+	}
 
 	if (!base_url.match(/^https?:/)) {
 		base_url = location.href.replace(/^(https?:\/\/[^\/]+\/).*$/, '$1') + base_url.replace(/^\/+/, '');
@@ -2806,11 +2817,10 @@ const WebDAVNavigator = (url, options) => {
 
 	document.querySelector('html').innerHTML = html_tpl;
 
+	// Wait for WOPI discovery before creating the list
 	if (wopi_discovery_url) {
-		// Wait for WOPI discovery before creating the list
 		wopi_init();
-	}
-	else {
+	} else {
 		reloadListing();
 	}
 
@@ -2900,6 +2910,7 @@ const WebDAVNavigator = (url, options) => {
 
 if (url = document.querySelector('html').getAttribute('data-webdav-url')) {
 	WebDAVNavigator(url, {
+		'start_url' : document.querySelector('html').getAttribute('data-start-url'),
 		'wopi_discovery_url': document.querySelector('html').getAttribute('data-wopi-discovery-url'),
 	});
 }

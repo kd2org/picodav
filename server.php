@@ -43,13 +43,15 @@ namespace PicoDAV
 			$user = $_SERVER['PHP_AUTH_USER'] ?? null;
 			$password = $_SERVER['PHP_AUTH_PW'] ?? null;
 
-			$hash = $this->users[$user]['password'] ?? null;
-
-			if (!$hash) {
+			if (!array_key_exists($user, $this->users)) {
 				return false;
 			}
 
-			if (!password_verify($password, $hash)) {
+			$hash = $this->users[$user]['password'] ?? null;
+
+			// If no password is set, we accept any password as we consider that a .htaccess/.htpasswd
+			// access has been granted
+			if (null !== $hash && !password_verify($password, $hash)) {
 				return false;
 			}
 
