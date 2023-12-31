@@ -25,6 +25,16 @@ namespace KD2\WebDAV
 			'DAV::quota-available-bytes',
 		];
 
+		const PROP_NAMESPACE_MICROSOFT = 'urn:schemas-microsoft-com:';
+
+		const MODIFICATION_TIME_PROPERTIES = [
+			'DAV::lastmodified',
+			'DAV::creationdate',
+			'DAV::getlastmodified',
+			'urn:schemas-microsoft-com::Win32LastModifiedTime',
+			'urn:schemas-microsoft-com::Win32CreationTime',
+		];
+
 		// Custom properties
 
 		const PROP_DIGEST_MD5 = 'urn:karadav:digest_md5';
@@ -56,7 +66,8 @@ namespace KD2\WebDAV
 
 		public function setBaseURI(string $uri): void
 		{
-			$this->base_uri = rtrim($uri, '/') . '/';
+			$this->base_uri = '/' . ltrim($uri, '/');
+			$this->base_uri = rtrim($this->base_uri, '/') . '/';
 		}
 
 		protected function extendExecutionTime(): void
@@ -104,7 +115,7 @@ namespace KD2\WebDAV
 
 			foreach ($list as $file => $props) {
 				if (null === $props) {
-					$props = $this->storage->properties(trim($uri . '/' . $file, '/'), self::BASIC_PROPERTIES, 0);
+					$props = $this->storage->propfind(trim($uri . '/' . $file, '/'), self::BASIC_PROPERTIES, 0);
 				}
 
 				$collection = !empty($props['DAV::resourcetype']) && $props['DAV::resourcetype'] == 'collection';
@@ -209,7 +220,7 @@ namespace KD2\WebDAV
 			elseif (!empty($_SERVER['HTTP_OC_CHECKSUM'])
 				&& preg_match('/MD5:[a-f0-9]{32}|SHA1:[a-f0-9]{40}/', $_SERVER['HTTP_OC_CHECKSUM'], $match)) {
 				$hash_algo = strtok($match[0], ':');
-				$hash = strtok(false);
+				$hash = strtok('');
 			}
 
 			$uri = $this->_prefix($uri);
@@ -218,7 +229,7 @@ namespace KD2\WebDAV
 
 			if (!empty($_SERVER['HTTP_IF_MATCH'])) {
 				$etag = trim($_SERVER['HTTP_IF_MATCH'], '" ');
-				$prop = $this->storage->properties($uri, ['DAV::getetag'], 0);
+				$prop = $this->storage->propfind($uri, ['DAV::getetag'], 0);
 
 				if (!empty($prop['DAV::getetag']) && $prop['DAV::getetag'] != $etag) {
 					throw new Exception('ETag did not match condition', 412);
@@ -228,10 +239,6 @@ namespace KD2\WebDAV
 			// Specific to NextCloud/ownCloud, to allow setting file mtime
 			// This expects a UNIX timestamp
 			$mtime = (int)($_SERVER['HTTP_X_OC_MTIME'] ?? 0) ?: null;
-
-			if ($mtime) {
-				header('X-OC-MTime: accepted');
-			}
 
 			$this->extendExecutionTime();
 
@@ -252,9 +259,17 @@ namespace KD2\WebDAV
 				fseek($stream, 0, SEEK_SET);
 			}
 
-			$created = $this->storage->put($uri, $stream, $hash_algo, $hash, $mtime);
+			$created = $this->storage->put($uri, $stream, $hash_algo, $hash);
 
-			$prop = $this->storage->properties($uri, ['DAV::getetag'], 0);
+			if ($mtime) {
+				$mtime = new \DateTime('@' . $mtime);
+
+				if ($this->storage->touch($uri, $mtime)) {
+					header('X-OC-MTime: accepted');
+				}
+			}
+
+			$prop = $this->storage->propfind($uri, ['DAV::getetag'], 0);
 
 			if (!empty($prop['DAV::getetag'])) {
 				$value = $prop['DAV::getetag'];
@@ -282,7 +297,7 @@ namespace KD2\WebDAV
 				$requested_props[] = self::PROP_DIGEST_MD5;
 			}
 
-			$props = $this->storage->properties($uri, $requested_props, 0);
+			$props = $this->storage->propfind($uri, $requested_props, 0);
 
 			if (!$props) {
 				throw new Exception('Resource Not Found', 404);
@@ -363,7 +378,7 @@ namespace KD2\WebDAV
 			}
 
 			if (!isset($file['content']) && !isset($file['resource']) && !isset($file['path'])) {
-				throw new \RuntimeException('Invalid file array returned by ::get()');
+				throw new \RuntimeException('Invalid file array returned by ::get(): ' . print_r($file, true));
 			}
 
 			$this->extendExecutionTime();
@@ -573,7 +588,7 @@ namespace KD2\WebDAV
 			// should do just nothing, see 'depth_zero_copy' test in litmus
 			if ($depth == 0
 				&& $this->storage->exists($destination)
-				&& current($this->storage->properties($destination, ['DAV::resourcetype'], 0)) == 'collection') {
+				&& current($this->storage->propfind($destination, ['DAV::resourcetype'], 0)) == 'collection') {
 				$overwritten = $this->storage->exists($uri);
 			}
 			else {
@@ -692,10 +707,16 @@ namespace KD2\WebDAV
 			$requested_keys = $requested ? array_keys($requested) : null;
 
 			// Find root element properties
-			$properties = $this->storage->properties($uri, $requested_keys, $depth);
+			$properties = $this->storage->propfind($uri, $requested_keys, $depth);
 
 			if (null === $properties) {
 				throw new Exception('This does not exist', 404);
+			}
+
+			if (isset($properties['DAV::getlastmodified'])) {
+				foreach (self::MODIFICATION_TIME_PROPERTIES as $name) {
+					$properties[$name] = $properties['DAV::getlastmodified'];
+				}
 			}
 
 			$items = [$uri => $properties];
@@ -703,7 +724,7 @@ namespace KD2\WebDAV
 			if ($depth) {
 				foreach ($this->storage->list($uri, $requested) as $file => $properties) {
 					$path = trim($uri . '/' . $file, '/');
-					$properties = $properties ?? $this->storage->properties($path, $requested_keys, 0);
+					$properties = $properties ?? $this->storage->propfind($path, $requested_keys, 0);
 
 					if (!$properties) {
 						$this->log('!!! Cannot find "%s"', $path);
@@ -947,19 +968,93 @@ namespace KD2\WebDAV
 			$uri = $this->_prefix($uri);
 			$this->checkLock($uri);
 
+			$prefix = '<?xml version="1.0" encoding="utf-8"?>' . "\n";
+			$prefix.= '<d:multistatus xmlns:d="DAV:"';
+			$suffix = "</d:multistatus>\n";
+
 			$body = file_get_contents('php://input');
 
-			$this->storage->setProperties($uri, $body);
+			$properties = $this->parsePropPatch($body);
+			$root_namespaces = [];
+			$i = 0;
+			$set_time = null;
+			$set_time_name = null;
+
+			foreach ($properties as $name => $value) {
+				$pos = strrpos($name, ':');
+				$ns = substr($name, 0, $pos);
+
+				if (!array_key_exists($ns, $root_namespaces)) {
+					$alias = 'rns' . $i++;
+					$root_namespaces[$ns] = $alias;
+					$prefix .= sprintf(' xmlns:%s="%s"', $alias, htmlspecialchars($ns, ENT_XML1));
+				}
+			}
+
+			// See if the client wants to set the modification time
+			foreach (self::MODIFICATION_TIME_PROPERTIES as $name) {
+				if (!array_key_exists($name, $properties) || $value['action'] !== 'set' || empty($value['content'])) {
+					continue;
+				}
+
+				$ts = $value['content'];
+
+				if (ctype_digit($ts)) {
+					$ts = '@' . $ts;
+				}
+
+				$set_time = new \DateTime($value['content']);
+				$set_time_name = $name;
+			}
+
+			$prefix .= sprintf(">\n<d:response>\n  <d:href>%s</d:href>\n", htmlspecialchars($url, ENT_XML1));
 
 			// http_response_code doesn't know the 207 status code
 			header('HTTP/1.1 207 Multi-Status', true);
-			header('Content-Type: application/xml; charset=utf-8');
+			header('Content-Type: application/xml; charset=utf-8', true);
 
-			$out = '<?xml version="1.0" encoding="utf-8"?>' . "\n";
-			$out .= '<d:multistatus xmlns:d="DAV:">';
-			$out .= '</d:multistatus>';
+			if (!count($properties)) {
+				return $prefix . $suffix;
+			}
 
-			return $out;
+			if ($set_time) {
+				unset($properties[$set_time_name]);
+			}
+
+			$return = $this->storage->proppatch($uri, $properties);
+
+			if ($set_time && $this->touch($uri, $set_time)) {
+				$return[$set_time_name] = 200;
+			}
+
+			$out = '';
+
+			static $messages = [
+				200 => 'OK',
+				403 => 'Forbidden',
+				409 => 'Conflict',
+				427 => 'Failed Dependency',
+				507 => 'Insufficient Storage',
+			];
+
+			foreach ($return as $name => $status) {
+				$pos = strrpos($name, ':');
+				$ns = substr($name, 0, $pos);
+				$name = substr($name, $pos + 1);
+
+				$out .= "  <d:propstat>\n    <d:prop>";
+				$out .= sprintf("<%s:%s /></d:prop>\n    <d:status>HTTP/1.1 %d %s</d:status>",
+					$root_namespaces[$ns],
+					$name,
+					$status,
+					$messages[$status] ?? ''
+				);
+				$out .= "\n  </d:propstat>\n";
+			}
+
+			$out .= "</d:response>\n";
+
+			return $prefix . $out . $suffix;
 		}
 
 		public function http_lock(string $uri): ?string
@@ -1110,7 +1205,7 @@ namespace KD2\WebDAV
 				&& preg_match('/\(<([^>]*)>\s+\["([^""]+)"\]\)/', $_SERVER['HTTP_IF'], $match)) {
 				$token = $match[1];
 				$request_etag = $match[2];
-				$etag = current($this->storage->properties($uri, ['DAV::getetag'], 0));
+				$etag = current($this->storage->propfind($uri, ['DAV::getetag'], 0));
 
 				if ($request_etag != $etag) {
 					throw new Exception('Resource is locked and etag does not match', 412);
@@ -1163,9 +1258,10 @@ namespace KD2\WebDAV
 		{
 			$uri = parse_url($source, PHP_URL_PATH);
 			$uri = rawurldecode($uri);
-			$uri = rtrim($uri, '/');
+			$uri = trim($uri, '/');
+			$uri = '/' . $uri;
 
-			if ($uri . '/' == $this->base_uri) {
+			if ($uri . '/' === $this->base_uri) {
 				$uri .= '/';
 			}
 
@@ -1190,6 +1286,7 @@ namespace KD2\WebDAV
 				$uri = $_SERVER['REQUEST_URI'] ?? '/';
 			}
 
+			$uri = '/' . ltrim($uri, '/');
 			$this->original_uri = $uri;
 
 			if ($uri . '/' == $this->base_uri) {
@@ -1200,7 +1297,7 @@ namespace KD2\WebDAV
 				$uri = substr($uri, strlen($this->base_uri));
 			}
 			else {
-				$this->log('<= %s is not a managed URL', $uri);
+				$this->log('<= %s is not a managed URL (%s)', $uri, $this->base_uri);
 				return false;
 			}
 
@@ -1293,14 +1390,14 @@ namespace KD2\WebDAV
 
 		abstract public function exists(string $uri): bool;
 
-		abstract public function properties(string $uri, ?array $requested_properties, int $depth): ?array;
+		abstract public function propfind(string $uri, ?array $requested_properties, int $depth): ?array;
 
-		public function setProperties(string $uri, string $body): void
+		public function proppatch(string $uri, array $properties): array
 		{
 			// By default, properties are not saved
 		}
 
-		abstract public function put(string $uri, $pointer, ?string $hash_algo, ?string $hash, ?int $mtime): bool;
+		abstract public function put(string $uri, $pointer, ?string $hash_algo, ?string $hash): bool;
 
 		abstract public function delete(string $uri): void;
 
@@ -1311,6 +1408,8 @@ namespace KD2\WebDAV
 		abstract public function mkcol(string $uri): void;
 
 		abstract public function list(string $uri, array $properties): iterable;
+
+		abstract public function touch(string $uri, \DateTimeInterface $timestamp): bool;
 
 		public function lock(string $uri, string $token, string $scope): void
 		{
@@ -1534,13 +1633,8 @@ namespace PicoDAV
 				case 'DAV::resourcetype':
 					return is_dir($target) ? 'collection' : '';
 				case 'DAV::getlastmodified':
-					if (!$uri && $depth == 0 && is_dir($target)) {
-						$mtime = self::getDirectoryMTime($target);
-					}
-					else {
-						$mtime = filemtime($target);
-					}
-
+					$mtime = filemtime($target);
+					
 					if (!$mtime) {
 						return null;
 					}
@@ -1587,7 +1681,7 @@ namespace PicoDAV
 			return null;
 		}
 
-		public function properties(string $uri, ?array $properties, int $depth): ?array
+		public function propfind(string $uri, ?array $properties, int $depth): ?array
 		{
 			$target = $this->path . $uri;
 
@@ -1612,7 +1706,7 @@ namespace PicoDAV
 			return $out;
 		}
 
-		public function put(string $uri, $pointer, ?string $hash_algo, ?string $hash, ?int $mtime): bool
+		public function put(string $uri, $pointer, ?string $hash_algo, ?string $hash): bool
 		{
 			if (preg_match(self::PUT_IGNORE_PATTERN, basename($uri))) {
 				return false;
@@ -1670,10 +1764,6 @@ namespace PicoDAV
 			}
 			else {
 				rename($tmp_file, $target);
-			}
-
-			if ($mtime) {
-				@touch($target, $mtime);
 			}
 
 			return $new;
@@ -1802,28 +1892,10 @@ namespace PicoDAV
 			mkdir($target, 0770);
 		}
 
-		static public function getDirectoryMTime(string $path): int
+		public function touch(string $uri, \DateTimeInterface $datetime): bool
 		{
-			$last = 0;
-			$path = rtrim($path, '/');
-
-			foreach (self::glob($path, '/*', GLOB_NOSORT) as $f) {
-				if (is_dir($f)) {
-					$m = self::getDirectoryMTime($f);
-
-					if ($m > $last) {
-						$last = $m;
-					}
-				}
-
-				$m = filemtime($f);
-
-				if ($m > $last) {
-					$last = $m;
-				}
-			}
-
-			return $last;
+			$target = $this->path . $uri;
+			return @touch($target, $datetime->getTimestamp());
 		}
 	}
 
@@ -1942,11 +2014,11 @@ RewriteRule ^.*$ /index.php [END]
 		$fp = fopen(__FILE__, 'r');
 
 		if ($relative_uri == '.webdav/webdav.js') {
-			fseek($fp, 52782, SEEK_SET);
-			echo fread($fp, 28039);
+			fseek($fp, 55024, SEEK_SET);
+			echo fread($fp, 27891);
 		}
 		else {
-			fseek($fp, 52782 + 28039, SEEK_SET);
+			fseek($fp, 55024 + 27891, SEEK_SET);
 			echo fread($fp, 7004);
 		}
 
@@ -2801,9 +2873,6 @@ const WebDAVNavigator = (url, options) => {
 	if (location.pathname.indexOf(base_url) === 0) {
 		current_url = location.pathname;
 	}
-	else if (options.start_url) {
-		current_url = options.start_url;
-	}
 
 	if (!base_url.match(/^https?:/)) {
 		base_url = location.href.replace(/^(https?:\/\/[^\/]+\/).*$/, '$1') + base_url.replace(/^\/+/, '');
@@ -2910,7 +2979,6 @@ const WebDAVNavigator = (url, options) => {
 
 if (url = document.querySelector('html').getAttribute('data-webdav-url')) {
 	WebDAVNavigator(url, {
-		'start_url' : document.querySelector('html').getAttribute('data-start-url'),
 		'wopi_discovery_url': document.querySelector('html').getAttribute('data-wopi-discovery-url'),
 	});
 }

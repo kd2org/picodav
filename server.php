@@ -210,12 +210,7 @@ namespace PicoDAV
 				case 'DAV::resourcetype':
 					return is_dir($target) ? 'collection' : '';
 				case 'DAV::getlastmodified':
-					if (!$uri && $depth == 0 && is_dir($target)) {
-						$mtime = self::getDirectoryMTime($target);
-					}
-					else {
-						$mtime = filemtime($target);
-					}
+					$mtime = filemtime($target);
 
 					if (!$mtime) {
 						return null;
@@ -263,7 +258,7 @@ namespace PicoDAV
 			return null;
 		}
 
-		public function properties(string $uri, ?array $properties, int $depth): ?array
+		public function propfind(string $uri, ?array $properties, int $depth): ?array
 		{
 			$target = $this->path . $uri;
 
@@ -288,7 +283,7 @@ namespace PicoDAV
 			return $out;
 		}
 
-		public function put(string $uri, $pointer, ?string $hash_algo, ?string $hash, ?int $mtime): bool
+		public function put(string $uri, $pointer, ?string $hash_algo, ?string $hash): bool
 		{
 			if (preg_match(self::PUT_IGNORE_PATTERN, basename($uri))) {
 				return false;
@@ -346,10 +341,6 @@ namespace PicoDAV
 			}
 			else {
 				rename($tmp_file, $target);
-			}
-
-			if ($mtime) {
-				@touch($target, $mtime);
 			}
 
 			return $new;
@@ -478,28 +469,10 @@ namespace PicoDAV
 			mkdir($target, 0770);
 		}
 
-		static public function getDirectoryMTime(string $path): int
+		public function touch(string $uri, \DateTimeInterface $datetime): bool
 		{
-			$last = 0;
-			$path = rtrim($path, '/');
-
-			foreach (self::glob($path, '/*', GLOB_NOSORT) as $f) {
-				if (is_dir($f)) {
-					$m = self::getDirectoryMTime($f);
-
-					if ($m > $last) {
-						$last = $m;
-					}
-				}
-
-				$m = filemtime($f);
-
-				if ($m > $last) {
-					$last = $m;
-				}
-			}
-
-			return $last;
+			$target = $this->path . $uri;
+			return @touch($target, $datetime->getTimestamp());
 		}
 	}
 

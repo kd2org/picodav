@@ -1,4 +1,5 @@
 all: clean index.php
+KD2FW_URL := https://fossil.kd2.org/kd2fw/doc/trunk/src/lib/KD2/
 
 deps:
 	@-mkdir -p lib/KD2/WebDAV
