@@ -23,6 +23,11 @@ If you drop the [`index.php`](https://fossil.kd2.org/picodav/doc/trunk/index.php
 * Restrict users to some directories, control where they can write!
 * Support for [rclone](https://rclone.org) as a NextCloud provider
 
+## Development
+
+* Main Fossil repository: <https://fossil.kd2.org/picodav/>
+* Git mirror: <https://github.com/kd2org/picodav/> (issues and PR accepted)
+
 ## WebDAV clients
 
 You can use any WebDAV client, but we recommend these:
