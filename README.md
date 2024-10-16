@@ -2,7 +2,7 @@
 
 ## Single-file WebDAV server in PHP, just drop it in a directory!
 
-If you drop the [`index.php`](https://github.com/kd2org/picodav/raw/main/index.php) file in a directory of your web-server, it will make the contents of this directory available via WebDAV, and will also provide a nice web UI to manage the files, using [WebDAV Manager.js](https://github.com/kd2org/webdav-manager.js).
+If you drop the [`index.php`](https://fossil.kd2.org/picodav/doc/trunk/index.php) file in a directory of your web-server, it will make the contents of this directory available via WebDAV, and will also provide a nice web UI to manage the files, using [WebDAV Manager.js](https://fossil.kd2.org/webdav-manager/).
 
 ![Web UI screenshot](https://raw.githubusercontent.com/kd2org/webdav-manager.js/main/scr_desktop.png)
 
@@ -33,7 +33,7 @@ You can use any WebDAV client, but we recommend these:
 
 ## Install
 
-It's really as simple as it says: just upload the [`index.php`](https://github.com/kd2org/picodav/raw/main/index.php) file to a directory on your web-server, and it will now be available via WebDAV!
+It's really as simple as it says: just upload the [`index.php`](https://fossil.kd2.org/picodav/doc/trunk/index.php) file to a directory on your web-server, and it will now be available via WebDAV!
 
 If you are using Apache (version 2.3.9 or later is required), a .htaccess file will be created if it does not exist, to redirect requests to `index.php`. If not, you can use the provided `.htaccess` as a basis for your server configuration.
 
@@ -154,7 +154,7 @@ This is designed to work best with Apache web servers. If you are using another 
 
 ## See also: KaraDAV
 
-[KaraDAV](https://github.com/kd2org/karadav/) is another WebDAV server built by me, using the same library and the same web UI to manage files.
+[KaraDAV](https://fossil.kd2.org/karadav/) is another WebDAV server built by me, using the same library and the same web UI to manage files.
 
 How KaraDAV is different? Well, KaraDAV:
 
