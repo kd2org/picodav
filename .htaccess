@@ -1,5 +1,9 @@
 DirectoryIndex disabled
 
+# Force Apache to pass the Authorization header to PHP
+# See https://github.com/kd2org/picodav/issues/14
+CGIPassAuth On
+
 RedirectMatch 404 \.picodav\.ini
 
 RewriteEngine On
