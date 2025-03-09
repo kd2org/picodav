@@ -1,8 +1,12 @@
 DirectoryIndex disabled
 
-# Force Apache to pass the Authorization header to PHP
-# See https://github.com/kd2org/picodav/issues/14
-CGIPassAuth On
+<IfModule mod_version.c>
+	<IfVersion >= 2.4.13>
+		# Force Apache to pass the Authorization header to PHP
+		# See https://github.com/kd2org/picodav/issues/14
+		CGIPassAuth On
+	</IfVersion>
+</IfModule>
 
 RedirectMatch 404 \.picodav\.ini
 
