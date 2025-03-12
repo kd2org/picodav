@@ -59,10 +59,28 @@ namespace PicoDAV
 			return true;
 		}
 
-		static protected function glob(string $path, string $pattern = '', int $flags = 0): array
+		static protected function glob(string $path, int $flags = 0): array
 		{
-			$path = preg_replace('/[\*\?\[\]]/', '\\\\$0', $path);
-			return glob($path . $pattern, $flags);
+			if (file_exists($path) && !is_dir($path)) {
+				return [$path];
+			}
+
+			$dir = dir($path);
+			$out = [];
+
+			while ($file = $dir->read()) {
+				if ($file === '.' || $file === '..') {
+					continue;
+				}
+
+				if (($flags & GLOB_ONLYDIR) && !is_dir($path . '/' . $file)) {
+					continue;
+				}
+
+				$out[] = $path . '/' . $file;
+			}
+
+			return $out;
 		}
 
 		public function canRead(string $uri): bool
@@ -154,12 +172,12 @@ namespace PicoDAV
 				//throw new WebDAV_Exception('Access forbidden', 403);
 			}
 
-			$dirs = self::glob($this->path . $uri, '/*', \GLOB_ONLYDIR);
+			$dirs = self::glob($this->path . $uri, \GLOB_ONLYDIR);
 			$dirs = array_map('basename', $dirs);
 			$dirs = array_filter($dirs, fn($a) => $this->canRead(ltrim($uri . '/' . $a, '/') . '/'));
 			natcasesort($dirs);
 
-			$files = self::glob($this->path . $uri, '/*');
+			$files = self::glob($this->path . $uri);
 			$files = array_map('basename', $files);
 			$files = array_diff($files, $dirs);
 
@@ -367,7 +385,7 @@ namespace PicoDAV
 			}
 
 			if (is_dir($target)) {
-				foreach (self::glob($target, '/*') as $file) {
+				foreach (self::glob($target) as $file) {
 					$this->delete(substr($file, strlen($this->path)));
 				}
 
