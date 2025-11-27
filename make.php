@@ -15,6 +15,8 @@ function clean_php_source(string $file): string
 
 $php = file_get_contents('server.php');
 $php = strtr($php, [
+	'//__KD2\HTTP\Server__' => clean_php_source('lib/KD2/HTTP/Server.php'),
+	'//__KD2\WebDAV\Exception__' => clean_php_source('lib/KD2/WebDAV/Exception.php'),
 	'//__KD2\WebDAV\Server__' => clean_php_source('lib/KD2/WebDAV/Server.php'),
 	'//__KD2\WebDAV\AbstractStorage__' => clean_php_source('lib/KD2/WebDAV/AbstractStorage.php'),
 	'/*__HTACCESS__*/' => var_export(file_get_contents('.htaccess'), true),

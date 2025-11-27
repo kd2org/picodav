@@ -1,9 +1,241 @@
 <?php
 
+namespace KD2\HTTP
+{
+		class Server
+	{
+		static public function isXSendFileEnabled(): bool
+		{
+			if (!isset($_SERVER['SERVER_SOFTWARE'])) {
+				return false;
+			}
+
+			if (stristr($_SERVER['SERVER_SOFTWARE'], 'apache')
+				&& function_exists('apache_get_modules')
+				&& in_array('mod_xsendfile', apache_get_modules())) {
+				return true;
+			}
+			else if (stristr($_SERVER['SERVER_SOFTWARE'], 'lighttpd')) {
+				return true;
+			}
+
+			return false;
+		}
+
+		static public function serveFile(?string $content, ?string $path, $resource, array $options = []): void
+		{
+			if (!is_null($resource) && !is_resource($resource)) {
+				throw new \InvalidArgumentException('$resource must be a valid resource');
+			}
+
+			$source = [&$content, &$path, &$resource];
+			$source = array_filter($source);
+
+			if (count($source) !== 1) {
+				throw new \InvalidArgumentException('No valid file resource was passed');
+			}
+
+			unset($source);
+
+			if (!empty($options['xsendfile']) && self::isXSendFileEnabled() && $path) {
+				header('X-Sendfile: ' . $path);
+				return;
+			}
+
+			// Don't return Content-Length on OVH, as their HTTP 2.0 proxy is buggy
+			// @see https://fossil.kd2.org/paheko/tktview/8b342877cda6ef7023b16277daa0ec8e39d949f8
+			$disable_length = !empty($_SERVER['HTTP_X_OVHREQUEST_ID']);
+
+			$size = $options['size'] ?? null;
+			$name = $options['name'] ?? null;
+			$allow_gzip = boolval($options['gzip'] ?? true);
+			$allow_ranges = !$disable_length && boolval($options['ranges'] ?? true);
+
+			if (null === $size && null !== $content) {
+				$size = strlen($content);
+			}
+			elseif (null === $size && null !== $path) {
+				$size = filemtime($path);
+			}
+
+			if (null === $name && null !== $path) {
+				$name = basename($path);
+			}
+
+			// Extend execution time, serving the file might be slow (eg. slow connection)
+			if (false === strpos(@ini_get('disable_functions'), 'set_time_limit')) {
+				@set_time_limit(3600);
+			}
+
+			@ini_set('max_execution_time', '3600');
+			@ini_set('max_input_time', '3600');
+
+			$length = $start = $end = null;
+			$gzip = false;
+
+			if ($allow_ranges
+				&& isset($_SERVER['HTTP_RANGE'])
+				&& preg_match('/^bytes=(\d*)-(\d*)$/i', $_SERVER['HTTP_RANGE'], $match)
+				&& $match[1] . $match[2] !== '') {
+				$start = $match[1] === '' ? null : (int) $match[1];
+				$end   = $match[2] === '' ? null : (int) $match[2];
+
+				if (null !== $start && $start < 0) {
+					throw new \LogicException('Start range cannot be satisfied', 416);
+				}
+
+				if (isset($size) && $start > $size) {
+					throw new \LogicException('End range cannot be satisfied', 416);
+				}
+			}
+			elseif ($allow_gzip
+				&& isset($_SERVER['HTTP_ACCEPT_ENCODING'])
+				&& false !== strpos($_SERVER['HTTP_ACCEPT_ENCODING'], 'gzip')
+				&& isset($size, $name)
+				// Don't compress if size is larger than 8 MiB
+				&& $size < 8*1024*1024
+				// Don't compress already compressed content
+				&& !preg_match('/\.(?:cbz|cbr|cb7|mp4|m4a|zip|docx|xlsx|pptx|ods|odt|odp|7z|gz|bz2|lzma|lz|xz|apk|dmg|jar|rar|webm|ogg|mp3|ogm|flac|ogv|mkv|avi)$/i', $name)) {
+				$gzip = true;
+				header('Content-Encoding: gzip', true);
+			}
+
+			// Try to avoid common issues with output buffering and stuff
+			if (function_exists('apache_setenv')) {
+				@apache_setenv('no-gzip', 1);
+			}
+
+			@ini_set('zlib.output_compression', 'Off');
+
+			// Clean buffer, just in case
+			if (@ob_get_length()) {
+				@ob_clean();
+			}
+
+			if (isset($content)) {
+				$length = strlen($content);
+
+				if ($start || $end) {
+					if (null !== $end && $end > $length) {
+						header('Content-Range: bytes */' . $length, true);
+						throw new \LogicException('End range cannot be satisfied', 416);
+					}
+
+					if ($start === null) {
+						$start = $length - $end;
+						$end = $start + $end;
+					}
+					elseif ($end === null) {
+						$end = $length;
+					}
+
+					http_response_code(206);
+					header(sprintf('Content-Range: bytes %s-%s/%s', $start, $end - 1, $length));
+					$content = substr($content, $start, $end - $start);
+					$length = $end - $start;
+				}
+
+				if ($gzip) {
+					$content = gzencode($content, 9);
+					$length = strlen($content);
+				}
+
+				if (!$disable_length) {
+					header('Content-Length: ' . $length, true);
+					header('Accept-Ranges: bytes');
+				}
+
+				echo $content;
+				return;
+			}
+
+			if (isset($path)) {
+				$resource = fopen($path, 'rb');
+			}
+
+			$seek = fseek($resource, 0, SEEK_END);
+
+			if ($seek === 0) {
+				$length = ftell($resource);
+				fseek($resource, 0, SEEK_SET);
+			}
+
+			http_response_code(200);
+
+			if (($start || $end) && $seek === 0) {
+				if (null !== $end && $end > $length) {
+					header('Content-Range: bytes */' . $length, true);
+					throw new \LogicException('End range cannot be satisfied', 416);
+				}
+
+				if ($start === null) {
+					$start = $length - $end;
+					$end = $start + $end;
+				}
+				elseif ($end === null) {
+					$end = $length;
+				}
+
+				fseek($resource, $start, SEEK_SET);
+
+				http_response_code(206);
+				header(sprintf('Content-Range: bytes %s-%s/%s', $start, $end - 1, $length), true);
+
+				$length = $end - $start;
+				$end -= $start;
+			}
+			elseif (null === $length && isset($path)) {
+				$end = $length = filesize($path);
+			}
+
+			if ($gzip) {
+				$gzip = deflate_init(ZLIB_ENCODING_GZIP);
+
+				$fp = fopen('php://temp', 'wb');
+
+				while (!feof($resource)) {
+					fwrite($fp, deflate_add($gzip, fread($resource, 8192), ZLIB_NO_FLUSH));
+				}
+
+				fwrite($fp, deflate_add($gzip, '', ZLIB_FINISH));
+				$length = ftell($fp);
+				rewind($fp);
+				unset($resource);
+
+				$resource = $fp;
+				unset($fp);
+			}
+
+			if (null !== $length && !$disable_length) {
+				header('Content-Length: ' . $length, true);
+				header('Accept-Ranges: bytes');
+			}
+
+			$block_size = 8192*4;
+
+			while (!feof($resource) && ($end === null || $end > 0)) {
+				$l = $end !== null ? min($block_size, $end) : $block_size;
+
+				echo fread($resource, $l);
+				flush();
+
+				if (null !== $end) {
+					$end -= $block_size;
+				}
+			}
+		}
+	}
+
+}
+
 namespace KD2\WebDAV
 {
 	
 	class Exception extends \RuntimeException {}
+
+
+	
+	use KD2\HTTP\Server as HTTP_Server;
 
 	class Server
 	{
@@ -25,8 +257,6 @@ namespace KD2\WebDAV
 			'DAV::quota-available-bytes',
 		];
 
-		const PROP_NAMESPACE_MICROSOFT = 'urn:schemas-microsoft-com:';
-
 		const MODIFICATION_TIME_PROPERTIES = [
 			'DAV::lastmodified',
 			'DAV::creationdate',
@@ -44,6 +274,8 @@ namespace KD2\WebDAV
 		const SHARED_LOCK = 'shared';
 		const EXCLUSIVE_LOCK = 'exclusive';
 
+		const DATE_RFC7231 = "D, d M Y H:i:s \\G\\M\\T";
+
 		protected bool $enable_gzip = true;
 
 		protected string $base_uri;
@@ -53,6 +285,24 @@ namespace KD2\WebDAV
 		public string $prefix = '';
 
 		protected AbstractStorage $storage;
+
+		protected array $headers;
+
+		public function __construct()
+		{
+			$this->headers = apache_request_headers();
+			$this->headers = array_change_key_case($this->headers, \CASE_LOWER);
+		}
+
+		public function getHeader(string $name): ?string
+		{
+			return $this->headers[strtolower($name)] ?? null;
+		}
+
+		public function setHeader(string $name, string $value): void
+		{
+			$this->headers[strtolower($name)] = $value;
+		}
 
 		public function setStorage(AbstractStorage $storage)
 		{
@@ -183,12 +433,16 @@ namespace KD2\WebDAV
 
 		public function http_put(string $uri): ?string
 		{
-			if (!empty($_SERVER['HTTP_CONTENT_TYPE']) && !strncmp($_SERVER['HTTP_CONTENT_TYPE'], 'multipart/', 10)) {
+			$content_type = $this->getHeader('Content-Type');
+
+			if ($content_type && !strncmp($content_type, 'multipart/', 10)) {
 				throw new Exception('Multipart PUT requests are not supported', 501);
 			}
 
-			if (!empty($_SERVER['HTTP_CONTENT_ENCODING'])) {
-				if (false !== strpos($_SERVER['HTTP_CONTENT_ENCODING'], 'gzip')) {
+			$content_encoding = $this->getHeader('Content-Encoding');
+
+			if ($content_encoding) {
+				if (false !== strpos($content_encoding, 'gzip')) {
 					// Might be supported later?
 					throw new Exception('Content Encoding is not supported', 501);
 				}
@@ -197,12 +451,12 @@ namespace KD2\WebDAV
 				}
 			}
 
-			if (!empty($_SERVER['HTTP_CONTENT_RANGE'])) {
+			if ($this->getHeader('Content-Range')) {
 				throw new Exception('Content Range is not supported', 501);
 			}
 
 			// See SabreDAV CorePlugin for reason why OS/X Finder is buggy
-			if (isset($_SERVER['HTTP_X_EXPECTED_ENTITY_LENGTH'])) {
+			if ($this->getHeader('X-Expected-Entity-Length')) {
 				throw new Exception('This server is not compatible with OS/X finder. Consider using a different WebDAV client or webserver.', 403);
 			}
 
@@ -211,14 +465,14 @@ namespace KD2\WebDAV
 
 			// Support for checksum matching
 			// https://dcache.org/old/manuals/UserGuide-6.0/webdav.shtml#checksums
-			if (!empty($_SERVER['HTTP_CONTENT_MD5'])) {
-				$hash = bin2hex(base64_decode($_SERVER['HTTP_CONTENT_MD5']));
+			if ($hash = $this->getHeader('Content-MD5')) {
+				$hash = bin2hex(base64_decode($hash));
 				$hash_algo = 'MD5';
 			}
 			// Support for ownCloud/NextCloud checksum
 			// https://github.com/owncloud-archive/documentation/issues/2964
-			elseif (!empty($_SERVER['HTTP_OC_CHECKSUM'])
-				&& preg_match('/MD5:[a-f0-9]{32}|SHA1:[a-f0-9]{40}/', $_SERVER['HTTP_OC_CHECKSUM'], $match)) {
+			elseif (($checksum = $this->getHeader('OC-Checksum'))
+				&& preg_match('/MD5:[a-f0-9]{32}|SHA1:[a-f0-9]{40}/', $checksum, $match)) {
 				$hash_algo = strtok($match[0], ':');
 				$hash = strtok('');
 			}
@@ -227,8 +481,8 @@ namespace KD2\WebDAV
 
 			$this->checkLock($uri);
 
-			if (!empty($_SERVER['HTTP_IF_MATCH'])) {
-				$etag = trim($_SERVER['HTTP_IF_MATCH'], '" ');
+			if ($match = $this->getHeader('If-Match')) {
+				$etag = trim($match, '" ');
 				$prop = $this->storage->propfind($uri, ['DAV::getetag'], 0);
 
 				if (!empty($prop['DAV::getetag']) && $prop['DAV::getetag'] != $etag) {
@@ -236,9 +490,19 @@ namespace KD2\WebDAV
 				}
 			}
 
+			if ($date = $this->getHeader('If-Unmodified-Since')) {
+				$date = \DateTime::createFromFormat(self::DATE_RFC7231, $date);
+				$prop = $this->storage->propfind($uri, ['DAV::getlastmodified'], 0);
+				if ($date && $prop && $prop instanceof \DateTimeInterface) {
+					if ($date != $prop) {
+						throw new Exception('File was modified since "If-Unmodified-Since" condition', 412);
+					}
+				}
+			}
+
 			// Specific to NextCloud/ownCloud, to allow setting file mtime
 			// This expects a UNIX timestamp
-			$mtime = (int)($_SERVER['HTTP_X_OC_MTIME'] ?? 0) ?: null;
+			$mtime = intval($this->getHeader('X-OC-MTime')) ?: null;
 
 			$this->extendExecutionTime();
 
@@ -246,7 +510,7 @@ namespace KD2\WebDAV
 
 			// mod_fcgid <= 2.3.9 doesn't handle chunked transfer encoding for PUT requests
 			// see https://github.com/kd2org/picodav/issues/6
-			if (strstr($_SERVER['HTTP_TRANSFER_ENCODING'] ?? '', 'chunked') && PHP_SAPI == 'fpm-fcgi') {
+			if (strstr($this->getHeader('Transfer-Encoding') ?? '', 'chunked') && PHP_SAPI == 'fpm-fcgi') {
 				// We can't seek here
 				// see https://github.com/php/php-src/issues/9441
 				$l = strlen(fread($stream, 1));
@@ -307,7 +571,7 @@ namespace KD2\WebDAV
 
 			if (isset($props['DAV::getlastmodified'])
 				&& $props['DAV::getlastmodified'] instanceof \DateTimeInterface) {
-				header(sprintf('Last-Modified: %s', $props['DAV::getlastmodified']->format(\DATE_RFC7231)));
+				header(sprintf('Last-Modified: %s', $props['DAV::getlastmodified']->format(self::DATE_RFC7231)));
 			}
 
 			if (!empty($props['DAV::getetag'])) {
@@ -346,7 +610,6 @@ namespace KD2\WebDAV
 			$uri = $this->_prefix($uri);
 
 			$is_collection = !empty($props['DAV::resourcetype']) && $props['DAV::resourcetype'] == 'collection';
-			$out = '';
 
 			if ($is_collection) {
 				$list = $this->storage->list($uri, self::BASIC_PROPERTIES);
@@ -377,162 +640,28 @@ namespace KD2\WebDAV
 				return null;
 			}
 
-			if (!isset($file['content']) && !isset($file['resource']) && !isset($file['path'])) {
-				throw new \RuntimeException('Invalid file array returned by ::get(): ' . print_r($file, true));
+			try {
+				HTTP_Server::serveFile(
+					$file['content'] ?? null,
+					$file['path'] ?? null,
+					$file['resource'] ?? null,
+					[
+						'gzip'      => $this->enable_gzip,
+						'ranges'    => true,
+						'xsendfile' => false,
+						'name'      => $uri,
+						'size'      => $props['DAV::getcontentlength'],
+					]
+				);
 			}
-
-			$this->extendExecutionTime();
-
-			$length = $start = $end = null;
-			$gzip = false;
-
-			if (isset($_SERVER['HTTP_RANGE'])
-				&& preg_match('/^bytes=(\d*)-(\d*)$/i', $_SERVER['HTTP_RANGE'], $match)
-				&& $match[1] . $match[2] !== '') {
-				$start = $match[1] === '' ? null : (int) $match[1];
-				$end   = $match[2] === '' ? null : (int) $match[2];
-
-				if (null !== $start && $start < 0) {
-					throw new Exception('Start range cannot be satisfied', 416);
-				}
-
-				if (isset($props['DAV::getcontentlength']) && $start > $props['DAV::getcontentlength']) {
-					throw new Exception('End range cannot be satisfied', 416);
-				}
-
-				$this->log('HTTP Range requested: %s-%s', $start, $end);
+			catch (\LogicException $e) {
+				throw new Exception($e->getMessage(), $e->getCode());
 			}
-			elseif ($this->enable_gzip
-				&& isset($_SERVER['HTTP_ACCEPT_ENCODING'])
-				&& false !== strpos($_SERVER['HTTP_ACCEPT_ENCODING'], 'gzip')
-				&& isset($props['DAV::getcontentlength'])
-				// Don't compress if size is larger than 8 MiB
-				&& $props['DAV::getcontentlength'] < 8*1024*1024
-				// Don't compress already compressed content
-				&& !preg_match('/\.(?:cbz|cbr|cb7|mp4|m4a|zip|docx|xlsx|pptx|ods|odt|odp|7z|gz|bz2|lzma|lz|xz|apk|dmg|jar|rar|webm|ogg|mp3|ogm|flac|ogv|mkv|avi)$/i', $uri)) {
-				$gzip = true;
-				header('Content-Encoding: gzip', true);
-			}
-
-			// Try to avoid common issues with output buffering and stuff
-			if (function_exists('apache_setenv')) {
-				@apache_setenv('no-gzip', 1);
-			}
-
-			@ini_set('zlib.output_compression', 'Off');
-
-			if (@ob_get_length()) {
-				@ob_clean();
-			}
-
-			if (isset($file['content'])) {
-				$length = strlen($file['content']);
-
-				if ($start || $end) {
-					if (null !== $end && $end > $length) {
-						header('Content-Range: bytes */' . $length, true);
-						throw new Exception('End range cannot be satisfied', 416);
-					}
-
-					if ($start === null) {
-						$start = $length - $end;
-						$end = $start + $end;
-					}
-					elseif ($end === null) {
-						$end = $length;
-					}
-
-					http_response_code(206);
-					header(sprintf('Content-Range: bytes %s-%s/%s', $start, $end - 1, $length));
-					$file['content'] = substr($file['content'], $start, $end - $start);
-					$length = $end - $start;
-				}
-
-				if ($gzip) {
-					$file['content'] = gzencode($file['content'], 9);
-					$length = strlen($file['content']);
-				}
-
-				header('Content-Length: ' . $length, true);
-				echo $file['content'];
-				return null;
-			}
-
-			if (isset($file['path'])) {
-				$file['resource'] = fopen($file['path'], 'rb');
-			}
-
-			$seek = fseek($file['resource'], 0, SEEK_END);
-
-			if ($seek === 0) {
-				$length = ftell($file['resource']);
-				fseek($file['resource'], 0, SEEK_SET);
-			}
-
-			if (($start || $end) && $seek === 0) {
-				if (null !== $end && $end > $length) {
-					header('Content-Range: bytes */' . $length, true);
-					throw new Exception('End range cannot be satisfied', 416);
-				}
-
-				if ($start === null) {
-					$start = $length - $end;
-					$end = $start + $end;
-				}
-				elseif ($end === null) {
-					$end = $length;
-				}
-
-				fseek($file['resource'], $start, SEEK_SET);
-
-				http_response_code(206);
-				header(sprintf('Content-Range: bytes %s-%s/%s', $start, $end - 1, $length), true);
-
-				$length = $end - $start;
-				$end -= $start;
-			}
-			elseif (null === $length && isset($file['path'])) {
-				$end = $length = filesize($file['path']);
-			}
-
-			if ($gzip) {
-				$this->log('Using gzip output compression');
-				$gzip = deflate_init(ZLIB_ENCODING_GZIP);
-
-				$fp = fopen('php://temp', 'wb');
-
-				while (!feof($file['resource'])) {
-					fwrite($fp, deflate_add($gzip, fread($file['resource'], 8192), ZLIB_NO_FLUSH));
-				}
-
-				fwrite($fp, deflate_add($gzip, '', ZLIB_FINISH));
-				$length = ftell($fp);
-				rewind($fp);
-				fclose($file['resource']);
-
-				$file['resource'] = $fp;
-				unset($fp);
-			}
-
-			if (null !== $length) {
-				$this->log('Length: %s', $length);
-				header('Content-Length: ' . $length, true);
-			}
-
-			$block_size = 8192*4;
-
-			while (!feof($file['resource']) && ($end === null || $end > 0)) {
-				$l = $end !== null ? min($block_size, $end) : $block_size;
-
-				echo fread($file['resource'], $l);
-				flush();
-
-				if (null !== $end) {
-					$end -= $block_size;
+			finally {
+				if (isset($file['resource'])) {
+					fclose($file['resource']);
 				}
 			}
-
-			fclose($file['resource']);
 
 			return null;
 		}
@@ -687,7 +816,7 @@ namespace KD2\WebDAV
 				throw new Exception('Invalid XML', 400);
 			}
 
-			$this->log('Requested depth: %s', $depth);
+			$this->log('<= Requested depth: %s', $depth);
 
 			// We don't really care about having a correct XML string,
 			// but we can get better WebDAV compliance if we do
@@ -727,7 +856,7 @@ namespace KD2\WebDAV
 					$properties = $properties ?? $this->storage->propfind($path, $requested_keys, 0);
 
 					if (!$properties) {
-						$this->log('!!! Cannot find "%s"', $path);
+						$this->log('!! Cannot find "%s"', $path);
 						continue;
 					}
 
@@ -807,8 +936,8 @@ namespace KD2\WebDAV
 					}
 
 					$pos = strrpos($name, ':');
-					$ns = substr($name, 0, strrpos($name, ':'));
-					$tag_name = substr($name, strrpos($name, ':') + 1);
+					$ns = substr($name, 0, $pos);
+					$tag_name = substr($name, $pos + 1);
 
 					$alias = $root_namespaces[$ns] ?? null;
 					$attributes = '';
@@ -837,7 +966,7 @@ namespace KD2\WebDAV
 						// Change value to GMT
 						$value = clone $value;
 						$value->setTimezone(new \DateTimeZone('GMT'));
-						$value = $value->format(DATE_RFC7231);
+						$value = $value->format(self::DATE_RFC7231);
 					}
 					elseif (is_array($value)) {
 						$attributes = $value['attributes'] ?? '';
@@ -874,8 +1003,8 @@ namespace KD2\WebDAV
 
 						foreach ($missing_properties as $name) {
 							$pos = strrpos($name, ':');
-							$ns = substr($name, 0, strrpos($name, ':'));
-							$name = substr($name, strrpos($name, ':') + 1);
+							$ns = substr($name, 0, $pos);
+							$name = substr($name, $pos + 1);
 							$alias = $root_namespaces[$ns] ?? null;
 
 							// NULL namespace, see Litmus FAQ for propnullns
@@ -909,7 +1038,7 @@ namespace KD2\WebDAV
 			$xml = @simplexml_load_string($body);
 
 			if (false === $xml) {
-				throw new WebDAV_Exception('Invalid XML', 400);
+				throw new Exception('Invalid XML', 400);
 			}
 
 			$_ns = null;
@@ -1003,11 +1132,11 @@ namespace KD2\WebDAV
 					$ts = '@' . $ts;
 				}
 
-				$set_time = new \DateTime($value['content']);
+				$set_time = new \DateTime($ts);
 				$set_time_name = $name;
 			}
 
-			$prefix .= sprintf(">\n<d:response>\n  <d:href>%s</d:href>\n", htmlspecialchars($url, ENT_XML1));
+			$prefix .= sprintf(">\n<d:response>\n  <d:href>%s</d:href>\n", htmlspecialchars($uri, ENT_XML1));
 
 			// http_response_code doesn't know the 207 status code
 			header('HTTP/1.1 207 Multi-Status', true);
@@ -1023,7 +1152,7 @@ namespace KD2\WebDAV
 
 			$return = $this->storage->proppatch($uri, $properties);
 
-			if ($set_time && $this->touch($uri, $set_time)) {
+			if ($set_time && $this->storage->touch($uri, $set_time)) {
 				$return[$set_time_name] = 200;
 			}
 
@@ -1072,7 +1201,6 @@ namespace KD2\WebDAV
 					throw new Exception('Invalid If header', 400);
 				}
 
-				$info = null;
 				$ns = 'D';
 				$scope = self::EXCLUSIVE_LOCK;
 
@@ -1086,7 +1214,7 @@ namespace KD2\WebDAV
 					throw new Exception('Cannot acquire another lock, resource is locked for exclusive use', 423);
 				}
 
-				if ($locked_scope && $token = $this->getLockToken()) {
+				if ($locked_scope) {
 					$token = $this->getLockToken();
 
 					if (!$token) {
@@ -1254,6 +1382,19 @@ namespace KD2\WebDAV
 			}
 		}
 
+		public function validateURI(string $uri): string
+		{
+			$uri = preg_replace('!/{2,}!', '/', $uri);
+			$uri = str_replace('\\', '/', $uri);
+
+			// Protect against path traversal
+			if (preg_match('!(?:^|/)\.\.(?:$|/)!', $uri)) {
+				throw new Exception(sprintf('Invalid URI: "%s"', $uri), 403);
+			}
+
+			return $uri;
+		}
+
 		protected function getURI(string $source): string
 		{
 			$uri = parse_url($source, PHP_URL_PATH);
@@ -1269,11 +1410,7 @@ namespace KD2\WebDAV
 				throw new Exception(sprintf('Invalid URI, "%s" is outside of scope "%s"', $uri, $this->base_uri), 400);
 			}
 
-			$uri = preg_replace('!/{2,}!', '/', $uri);
-
-			if (false !== strpos($uri, '..')) {
-				throw new Exception(sprintf('Invalid URI: "%s"', $uri), 403);
-			}
+			$uri = $this->validateURI($uri);
 
 			$uri = substr($uri, strlen($this->base_uri));
 			$uri = $this->_prefix($uri);
@@ -1297,7 +1434,7 @@ namespace KD2\WebDAV
 				$uri = substr($uri, strlen($this->base_uri));
 			}
 			else {
-				$this->log('<= %s is not a managed URL (%s)', $uri, $this->base_uri);
+				$this->log('=> %s is not a managed URL (%s)', $uri, $this->base_uri);
 				return false;
 			}
 
@@ -1327,9 +1464,7 @@ namespace KD2\WebDAV
 			$this->log('<= %s /%s', $method, $uri);
 
 			try {
-				if (false !== strpos($uri, '..')) {
-					throw new Exception(sprintf('Invalid URI: "%s"', $uri), 403);
-				}
+				$uri = $this->validateURI($uri);
 
 				// Call 'http_method' class method
 				$method = 'http_' . strtolower($method);
@@ -1386,7 +1521,12 @@ namespace KD2\WebDAV
 		abstract class AbstractStorage
 	{
 
+		const PUT_IGNORE_PATTERN = '!^~|~$|^~.*tmp$|^Thumbs\.db$|^desktop\.ini$|\.unison$|^My Saved Places'
+			. '|^\.(lock\.|_|DS_Store|DocumentRevisions|directory|Trash|Temp|fseventsd|apdisk|synkron|sync|symform|fuse|nfs)!i';
+
 		abstract public function get(string $uri): ?array;
+
+		abstract public function fetch(string $uri): ?string;
 
 		abstract public function exists(string $uri): bool;
 
@@ -1395,6 +1535,13 @@ namespace KD2\WebDAV
 		public function proppatch(string $uri, array $properties): array
 		{
 			// By default, properties are not saved
+			$out = [];
+
+			foreach ($properties as $key => $value) {
+				$out[$key] = 200;
+			}
+
+			return $out;
 		}
 
 		abstract public function put(string $uri, $pointer, ?string $hash_algo, ?string $hash): bool;
@@ -1409,7 +1556,7 @@ namespace KD2\WebDAV
 
 		abstract public function list(string $uri, array $properties): iterable;
 
-		abstract public function touch(string $uri, \DateTimeInterface $timestamp): bool;
+		abstract public function touch(string $uri, \DateTimeInterface $datetime): bool;
 
 		public function lock(string $uri, string $token, string $scope): void
 		{
@@ -1482,10 +1629,28 @@ namespace PicoDAV
 			return true;
 		}
 
-		static protected function glob(string $path, string $pattern = '', int $flags = 0): array
+		static protected function glob(string $path, int $flags = 0): array
 		{
-			$path = preg_replace('/[\*\?\[\]]/', '\\\\$0', $path);
-			return glob($path . $pattern, $flags);
+			if (file_exists($path) && !is_dir($path)) {
+				return [$path];
+			}
+
+			$dir = dir($path);
+			$out = [];
+
+			while ($file = $dir->read()) {
+				if ($file === '.' || $file === '..') {
+					continue;
+				}
+
+				if (($flags & GLOB_ONLYDIR) && !is_dir($path . '/' . $file)) {
+					continue;
+				}
+
+				$out[] = $path . '/' . $file;
+			}
+
+			return $out;
 		}
 
 		public function canRead(string $uri): bool
@@ -1577,12 +1742,12 @@ namespace PicoDAV
 				//throw new WebDAV_Exception('Access forbidden', 403);
 			}
 
-			$dirs = self::glob($this->path . $uri, '/*', \GLOB_ONLYDIR);
+			$dirs = self::glob($this->path . $uri, \GLOB_ONLYDIR);
 			$dirs = array_map('basename', $dirs);
 			$dirs = array_filter($dirs, fn($a) => $this->canRead(ltrim($uri . '/' . $a, '/') . '/'));
 			natcasesort($dirs);
 
-			$files = self::glob($this->path . $uri, '/*');
+			$files = self::glob($this->path . $uri);
 			$files = array_map('basename', $files);
 			$files = array_diff($files, $dirs);
 
@@ -1612,6 +1777,23 @@ namespace PicoDAV
 			return ['path' => $path];
 		}
 
+		public function fetch(string $uri): ?string
+		{
+			$r = $this->get($uri);
+
+			if (!$r) {
+				return null;
+			}
+
+			$r = file_get_contents($r['path']);
+
+			if ($r === false) {
+				return null;
+			}
+
+			return $r;
+		}
+
 		public function exists(string $uri): bool
 		{
 			return file_exists($this->path . $uri);
@@ -1634,7 +1816,7 @@ namespace PicoDAV
 					return is_dir($target) ? 'collection' : '';
 				case 'DAV::getlastmodified':
 					$mtime = filemtime($target);
-					
+
 					if (!$mtime) {
 						return null;
 					}
@@ -1790,7 +1972,7 @@ namespace PicoDAV
 			}
 
 			if (is_dir($target)) {
-				foreach (self::glob($target, '/*') as $file) {
+				foreach (self::glob($target) as $file) {
 					$this->delete(substr($file, strlen($this->path)));
 				}
 
@@ -1851,8 +2033,6 @@ namespace PicoDAV
 			}
 			else {
 				$method($source, $target);
-
-				$this->getResourceProperties($uri)->move($destination);
 			}
 
 			return $overwritten;
@@ -1980,6 +2160,14 @@ namespace {
 	if (!empty($_SERVER['SERVER_SOFTWARE']) && stristr($_SERVER['SERVER_SOFTWARE'], 'apache') && !file_exists($self_dir . '/.htaccess')) {
 		file_put_contents($self_dir . '/.htaccess', str_replace('index.php', basename($self), 'DirectoryIndex disabled
 
+<IfModule mod_version.c>
+	<IfVersion >= 2.4.13>
+		# Force Apache to pass the Authorization header to PHP
+		# See https://github.com/kd2org/picodav/issues/14
+		CGIPassAuth On
+	</IfVersion>
+</IfModule>
+
 RedirectMatch 404 \\.picodav\\.ini
 
 RewriteEngine On
@@ -2014,12 +2202,12 @@ RewriteRule ^.*$ /index.php [END]
 		$fp = fopen(__FILE__, 'r');
 
 		if ($relative_uri == '.webdav/webdav.js') {
-			fseek($fp, 55024, SEEK_SET);
-			echo fread($fp, 27891);
+			fseek($fp, 58874, SEEK_SET);
+			echo fread($fp, 31826);
 		}
 		else {
-			fseek($fp, 55024 + 27891, SEEK_SET);
-			echo fread($fp, 7004);
+			fseek($fp, 58874 + 31826, SEEK_SET);
+			echo fread($fp, 7988);
 		}
 
 		fclose($fp);
@@ -2143,16 +2331,33 @@ const WebDAVNavigator = (url, options) => {
 				<option value="size">${_('Sort by size')}</option>
 			</select>
 			<input type="button" class="download_all" value="${_('Download all files')}" />
+			<input type="button" class="deleted_selected" value="${_('Delete selected')}" />
 		</div>
 		<table>%table%</table>`;
 
 	const create_buttons = `<input class="mkdir" type="button" value="${_('New directory')}" />
-			<input type="file" style="display: none;" />
-			<input class="mkfile" type="button" value="${_('New text file')}" />
-			<input class="uploadfile" type="button" value="${_('Upload file')}" />`;
+		<input type="file" style="display: none;" multiple />
+		<input class="mkfile" type="button" value="${_('New text file')}" />
+		<input class="uploadfile" type="button" value="${_('Upload files')}" />`;
 
-	const dir_row_tpl = `<tr data-permissions="%permissions%"><td class="thumb"><span class="icon dir"><b>%icon%</b></span></td><th colspan="2"><a href="%uri%">%name%</a></th><td>%modified%</td><td class="buttons"><div></div></td></tr>`;
-	const file_row_tpl = `<tr data-permissions="%permissions%" data-mime="%mime%" data-size="%size%"><td class="thumb"><span class="icon %icon%"><b>%icon%</b></span></td><th><a href="%uri%">%name%</a></th><td class="size">%size_bytes%</td><td>%modified%</td><td class="buttons"><div><a href="%uri%" download class="btn">${_('Download')}</a></div></td></tr>`;
+	const dir_row_tpl = `<tr data-permissions="%permissions%">
+		<td class="thumb"><span class="icon dir"><b>%icon%</b></span></td>
+		<th colspan="2"><a href="%uri%">%name%</a></th>
+		<td>%modified%</td>
+		<td class="buttons"><div></div></td>
+	</tr>`;
+
+	const file_row_tpl = `<tr data-permissions="%permissions%" data-mime="%mime%" data-size="%size%">
+		<td class="thumb">%thumb%<label><input type="checkbox" name="delete" value="%uri%" /><span></span></label></td>
+		<th><a href="%uri%">%name%</a></th>
+		<td class="size">%size_bytes%</td>
+		<td>%modified%</td>
+		<td class="buttons"><div><a href="%uri%" download class="btn">${_('Download')}</a></div></td>
+	</tr>`;
+
+	const icon_tpl = `<span class="icon %icon%"><b>%icon%</b></span>`;
+	const root_url = url.replace(/(?<!\/)\/.*$/, '/');
+	const image_thumb_tpl = `<img src="${root_url}index.php/apps/files/api/v1/thumbnail/150/150/%path%" alt="" />`;
 
 	const propfind_tpl = '<'+ `?xml version="1.0" encoding="UTF-8"?>
 		<D:propfind xmlns:D="DAV:" xmlns:oc="http://owncloud.org/ns">
@@ -2164,7 +2369,7 @@ const WebDAVNavigator = (url, options) => {
 	const wopi_propfind_tpl = '<' + `?xml version="1.0" encoding="UTF-8"?>
 		<D:propfind xmlns:D="DAV:" xmlns:W="https://interoperability.blob.core.windows.net/files/MS-WOPI/">
 			<D:prop>
-				<W:file-url/><W:token/><W:token-ttl/>
+				<W:wopi-url/><W:token/><W:token-ttl/>
 			</D:prop>
 		</D:propfind>`;
 
@@ -2181,21 +2386,27 @@ const WebDAVNavigator = (url, options) => {
 			}).then(str => new window.DOMParser().parseFromString(str, "text/xml"));
 	};
 
+	const reqHandler = (r, c) => {
+		if (!r.ok) {
+			return r.text().then(t => {
+				var message;
+				if (a = t.match(/<((?:\w+:)?message)>(.*)<\/\1>/)) {
+					message = "\n" + a[2];
+				}
+
+				throw new Error(r.status + ' ' + r.statusText + message);
+			});
+		}
+		window.setTimeout(c, 200);
+		return r;
+	};
+
 	const reqAndReload = (method, url, body, headers) => {
 		animateLoading();
-		req(method, url, body, headers).then(r => {
+		req(method, url, body, headers).then(r => reqHandler(r, () => {
 			stopLoading();
-			if (!r.ok) {
-				return r.text().then(t => {
-					var message;
-					if (a = t.match(/<((?:\w+:)?message)>(.*)<\/\1>/)) {
-						message = "\n" + a[2];
-					}
-
-					throw new Error(r.status + ' ' + r.statusText + message); });
-			}
 			reloadListing();
-		}).catch(e => {
+		})).catch(e => {
 			console.error(e);
 			alert(e);
 		});
@@ -2241,6 +2452,32 @@ const WebDAVNavigator = (url, options) => {
 		});
 		return p;
 	};
+
+	const uploadFiles = (files) => {
+		animateLoading();
+
+		(async () => {
+			for (var i = 0; i < files.length; i++) {
+				var f = files[i];
+				await reqOrError('PUT', current_url + encodeURIComponent(f.name), f);
+			}
+
+			window.setTimeout(() => {
+				stopLoading();
+				reloadListing();
+			}, 500);
+		})();
+	};
+
+	const reqOrError = (method, url, body) => {
+		return req(method, url, body).then(reqHandler).catch(e => {
+			console.error(e);
+			alert(e);
+			stopLoading();
+			reloadListing();
+			throw e;
+		});
+	}
 
 	const get_url = async (url) => {
 		var progress = (e) => {
@@ -2322,7 +2559,7 @@ const WebDAVNavigator = (url, options) => {
 
 	const wopi_open = async (document_url, wopi_url) => {
 		var properties = await reqXML('PROPFIND', document_url, wopi_propfind_tpl, {'Depth': '0'});
-		var src = (a = properties.querySelector('file-url')) ? a.textContent : null;
+		var src = (a = properties.querySelector('wopi-url')) ? a.textContent : null;
 		var token = (a = properties.querySelector('token')) ? a.textContent : null;
 		var token_ttl = (a = properties.querySelector('token-ttl')) ? a.textContent : +(new Date(Date.now() + 3600 * 1000));
 
@@ -2543,7 +2780,8 @@ const WebDAVNavigator = (url, options) => {
 		var root_permissions = null;
 
 		xml.querySelectorAll('response').forEach((node) => {
-			var item_uri = normalizeURL(node.querySelector('href').textContent);
+			var path = node.querySelector('href').textContent;
+			var item_uri = normalizeURL(path);
 			var props = null;
 
 			node.querySelectorAll('propstat').forEach((propstat) => {
@@ -2574,6 +2812,7 @@ const WebDAVNavigator = (url, options) => {
 
 			items[index].push({
 				'uri': item_uri,
+				'path': item_uri.substring(base_url.length),
 				'name': name,
 				'size': !is_dir && (prop = node.querySelector('getcontentlength')) ? parseInt(prop.textContent, 10) : null,
 				'mime': !is_dir && (prop = node.querySelector('getcontenttype')) ? prop.textContent : null,
@@ -2630,6 +2869,14 @@ const WebDAVNavigator = (url, options) => {
 			item.icon = item.is_dir ? '&#x1F4C1;' : (item.uri.indexOf('.') > 0 ? item.uri.replace(/^.*\.(\w+)$/, '$1').toUpperCase() : '');
 			item.modified = item.modified !== null ? formatDate(item.modified) : null;
 			item.name = html(item.name);
+
+			if (item.mime && item.mime.match(/^image\//) && options.nc_thumbnails) {
+				item.thumb = template(image_thumb_tpl, item);
+			}
+			else {
+				item.thumb = template(icon_tpl, item);
+			}
+
 			table += template(row, item);
 		});
 
@@ -2650,6 +2897,31 @@ const WebDAVNavigator = (url, options) => {
 		else {
 			$('.download_all').onclick = download_all;
 		}
+
+		$('.deleted_selected').onclick = () => {
+			var l = document.querySelectorAll('input[name=delete]:checked');
+
+			if (!l.length) {
+				alert(_('No file is selected'));
+				return;
+			}
+
+			openDialog(delete_dialog);
+			document.forms[0].onsubmit = () => {
+				animateLoading();
+
+				for (var i = 0; i < l.length; i++) {
+					reqOrError('DELETE', l[i].value);
+				}
+
+				// Don't reload too fast
+				window.setTimeout(() => {
+					stopLoading();
+					reloadListing();
+				}, 500);
+			};
+
+		};
 
 		if (!root_permissions || root_permissions.indexOf('C') != -1 || root_permissions.indexOf('K') != -1) {
 			$('.upload').insertAdjacentHTML('afterbegin', create_buttons);
@@ -2692,12 +2964,7 @@ const WebDAVNavigator = (url, options) => {
 			fi.onchange = () => {
 				if (!fi.files.length) return;
 
-				var body = new Blob(fi.files);
-				var name = fi.files[0].name;
-
-				name = encodeURIComponent(name);
-
-				return reqAndReload('PUT', current_url + name, body);
+				uploadFiles(fi.files);
 			};
 		}
 
@@ -2787,7 +3054,7 @@ const WebDAVNavigator = (url, options) => {
 						openDialog('<div class="md_preview"></div>', false);
 						$('dialog').className = 'preview';
 						req('GET', file_url).then(r => r.text()).then(t => {
-							$('.md_preview').innerHTML = microdown.parse(html(t));
+							$('.md_preview').innerHTML = microdown.parse(t);
 						});
 						return false;
 					}
@@ -2820,16 +3087,97 @@ const WebDAVNavigator = (url, options) => {
 					$$('.edit').onclick = (e) => {
 						req('GET', file_url).then((r) => r.text().then((t) => {
 							let md = file_url.match(/\.md$/);
-							openDialog(md ? markdown_dialog : edit_dialog);
+							var tpl = dialog_tpl.replace(/%b/, '');
+							$('body').classList.add('dialog');
+							$('body').insertAdjacentHTML('beforeend', tpl.replace(/%s/, md ? markdown_dialog : edit_dialog));
+
+							var tb = $('.close');
+							tb.className = 'toolbar';
+							tb.innerHTML = `<input type="button" value="&#x2716; ${_('Cancel')}" class="close" />
+								<label><input type="checkbox" class="autosave" /> ${_('Autosave')}</label>
+								<span class="status"></span>
+								<input class="save" type="button" value="${_('Save and close')}" />`;
+
 							var txt = $('textarea[name=edit]');
 							txt.value = t;
+
+							var saved_status = $('.toolbar .status');
+							var close_btn = $('.toolbar .close');
+							var save_btn = $('.toolbar .save');
+							var autosave = $('.toolbar .autosave');
+
+							var c = localStorage.getItem('autosave') ?? options.autosave;
+							autosave.checked = c == 1 || c ===  true;
+							autosave.onchange = () => {
+								localStorage.setItem('autosave', autosave.checked ? 1 : 0);
+							};
+
+							var preventClose = (e) => {
+								if (txt.value == t) {
+									return;
+								}
+
+								e.preventDefault();
+								e.returnValue = '';
+								return true;
+							};
+
+							var close = () => {
+								if (txt.value !== t) {
+									if (!confirm(_('Your changes have not been saved. Do you want to cancel WITHOUT saving?'))) {
+										return;
+									}
+								}
+
+								window.removeEventListener('beforeunload', preventClose, {capture: true});
+								closeDialog();
+							};
+
+							var save = () => {
+								reqOrError('PUT', file_url, txt.value);
+								t = txt.value;
+								updateSaveStatus();
+							};
+
+							var updateSaveStatus = () => {
+								saved_status.innerHTML = txt.value !== t ? '⚠️ ' + _('Modified') : '✔️ ' + _('Saved');
+							};
+
+							save_btn.onclick = () => { save(); close(); };
+							close_btn.onclick = close;
+
+							// Prevent close of tab if content has changed and is not saved
+							window.addEventListener('beforeunload', preventClose, { capture: true });
+
+							txt.onkeydown = (e) => {
+								if (e.ctrlKey && e.key == 's') {
+									save();
+									e.preventDefault();
+									return false;
+								}
+								else if (e.key === 'Escape') {
+									close();
+									e.preventDefault();
+									return false;
+								}
+							};
+
+							txt.onkeyup = (e) => {
+								updateSaveStatus();
+							};
+
+							window.setInterval(() => {
+								if (autosave.checked && t != txt.value) {
+									save();
+								}
+							}, 10000);
 
 							// Markdown editor
 							if (md) {
 								let pre = $('#md');
 
 								txt.oninput = () => {
-									pre.innerHTML = microdown.parse(html(txt.value));
+									pre.innerHTML = microdown.parse(txt.value);
 								};
 
 								txt.oninput();
@@ -2883,6 +3231,7 @@ const WebDAVNavigator = (url, options) => {
 	var wopi_mimes = {}, wopi_extensions = {};
 
 	const wopi_discovery_url = options.wopi_discovery_url || null;
+	options.autosave = options.autosave || false;
 
 	document.querySelector('html').innerHTML = html_tpl;
 
@@ -2961,25 +3310,14 @@ const WebDAVNavigator = (url, options) => {
 
 		if (!files.length) return;
 
-		animateLoading();
-
-		(async () => {
-			for (var i = 0; i < files.length; i++) {
-				var f = files[i]
-				await req('PUT', current_url + encodeURIComponent(f.name), f);
-			}
-
-			window.setTimeout(() => {
-				stopLoading();
-				reloadListing();
-			}, 500);
-		})();
+		uploadFiles(files);
 	});
 };
 
 if (url = document.querySelector('html').getAttribute('data-webdav-url')) {
 	WebDAVNavigator(url, {
 		'wopi_discovery_url': document.querySelector('html').getAttribute('data-wopi-discovery-url'),
+		'nc_thumbnails': document.querySelector('html').getAttribute('data-nc-thumbnails') ? true : false
 	});
 }
 :root {
@@ -3030,8 +3368,47 @@ th {
 }
 
 td.thumb {
-	width: 5%;
+	width: 3.6em;
+	padding: 0;
+	text-align: center;
+	position: relative;
 }
+
+td.thumb img {
+	width: 3.6em;
+	height: 3.6em;
+	display: block;
+}
+
+td.thumb .icon {
+	margin: .5em;
+}
+
+td.thumb input, td.thumb label span::before {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	margin: 0;
+	padding: 0;
+	opacity: 0;
+	display: block;
+	cursor: pointer;
+	user-select: none;
+}
+
+td.thumb input:checked + span::before {
+	content: "✔️";
+	font-size: 3em;
+	opacity: 1;
+	color: #fff;
+	text-shadow: 0px 0px 5px #000, 0px 0px 10px #000;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
 
 td.buttons {
 	text-align: right;
@@ -3050,7 +3427,7 @@ table tr:nth-child(even) {
 .icon {
 	width: 2.6em;
 	height: 2.6em;
-	display: block;
+	display: inline-block;
 	border-radius: .2em;
 	background:var(--g3-color);
 	overflow: hidden;
@@ -3099,7 +3476,7 @@ table tr:nth-child(even) {
 	text-align: right;
 }
 
-input[type=button], input[type=submit], .btn {
+input[type=button], input[type=submit], .btn, a.btn {
 	font-size: 1.2em;
 	padding: .3em .5em;
 	margin: .2em .3em;
@@ -3108,7 +3485,7 @@ input[type=button], input[type=submit], .btn {
 	border-radius: .2em;
 	cursor: pointer;
 	text-decoration: none;
-	color: var(--fg-color) !important;
+	color: var(--fg-color);
 	font-family: inherit;
 }
 
@@ -3143,8 +3520,32 @@ input[type=button]:hover, input[type=submit]:hover, .btn:hover {
 	margin: 0;
 }
 
-.close input {
+input.close {
 	font-size: .8em;
+}
+
+.toolbar {
+	margin: 0;
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+}
+
+.toolbar label {
+	padding: .5em;
+	background: var(--bg-color);
+	cursor: pointer;
+	border-radius: .5em;
+}
+
+.toolbar .save {
+	background: DarkSlateBlue;
+	color: #fff;
+}
+
+.toolbar .status {
+	width: 10em;
+	display: block;
 }
 
 input[type=submit] {
@@ -3194,6 +3595,10 @@ dialog form div {
 	grid-gap: .2em;
 	background: var(--g1-color);
 	height: 82vh;
+}
+
+#md img, #md video, #md iframe, #md embed, #md object {
+	max-width: 100%;
 }
 
 dialog.preview {

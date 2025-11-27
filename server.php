@@ -1,7 +1,14 @@
 <?php
 
+namespace KD2\HTTP
+{
+	//__KD2\HTTP\Server__
+}
+
 namespace KD2\WebDAV
 {
+	//__KD2\WebDAV\Exception__
+
 	//__KD2\WebDAV\Server__
 
 	//__KD2\WebDAV\AbstractStorage__
@@ -205,6 +212,23 @@ namespace PicoDAV
 			}
 
 			return ['path' => $path];
+		}
+
+		public function fetch(string $uri): ?string
+		{
+			$r = $this->get($uri);
+
+			if (!$r) {
+				return null;
+			}
+
+			$r = file_get_contents($r['path']);
+
+			if ($r === false) {
+				return null;
+			}
+
+			return $r;
 		}
 
 		public function exists(string $uri): bool
@@ -446,8 +470,6 @@ namespace PicoDAV
 			}
 			else {
 				$method($source, $target);
-
-				$this->getResourceProperties($uri)->move($destination);
 			}
 
 			return $overwritten;
