@@ -1007,7 +1007,7 @@ namespace KD2\WebDAV
 				$set_time_name = $name;
 			}
 
-			$prefix .= sprintf(">\n<d:response>\n  <d:href>%s</d:href>\n", htmlspecialchars($url, ENT_XML1));
+			$prefix .= sprintf(">\n<d:response>\n  <d:href>%s</d:href>\n", htmlspecialchars($uri, ENT_XML1));
 
 			// http_response_code doesn't know the 207 status code
 			header('HTTP/1.1 207 Multi-Status', true);
