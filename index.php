@@ -1395,6 +1395,13 @@ namespace KD2\WebDAV
 		public function proppatch(string $uri, array $properties): array
 		{
 			// By default, properties are not saved
+			$out = [];
+
+			foreach ($properties as $key => $value) {
+				$out[$key] = 200;
+			}
+
+			return $out;
 		}
 
 		abstract public function put(string $uri, $pointer, ?string $hash_algo, ?string $hash): bool;
