@@ -447,7 +447,7 @@ namespace PicoDAV
 			else {
 				$method($source, $target);
 
-				$this->getResourceProperties($uri)->move($destination);
+				//$this->getResourceProperties($uri)->move($destination);
 			}
 
 			return $overwritten;
