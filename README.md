@@ -4,7 +4,7 @@
 
 If you drop the [`index.php`](https://fossil.kd2.org/picodav/doc/trunk/index.php) file in a directory of your web-server, it will make the contents of this directory available via WebDAV, and will also provide a nice web UI to manage the files, using [WebDAV Manager.js](https://fossil.kd2.org/webdav-manager/).
 
-![Web UI screenshot](https://raw.githubusercontent.com/kd2org/webdav-manager.js/main/scr_desktop.png)
+![Web UI screenshot](scr.webp)
 
 * Single-file WebDAV server! Only 85 KB!
 * No database!
