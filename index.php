@@ -942,11 +942,12 @@ namespace KD2\WebDAV
 					$alias = $root_namespaces[$ns] ?? null;
 					$attributes = '';
 
-					// The ownCloud Android app doesn't like formatted dates, it makes it crash.
+					// The ownCloud/OpenCloud Android app doesn't like formatted dates, it makes it crash.
 					// so force it to have a timestamp
+					// see https://github.com/opencloud-eu/android/issues/74
 					if ($name == 'DAV::creationdate'
 						&& ($value instanceof \DateTimeInterface)
-						&& false !== stripos($_SERVER['HTTP_USER_AGENT'] ?? '', 'owncloud')) {
+						&& false !== preg_match('/owncloud|opencloud/', $_SERVER['HTTP_USER_AGENT'] ?? '')) {
 						$value = $value->getTimestamp();
 					}
 					// ownCloud app crashes if mimetype is provided for a directory
@@ -2202,12 +2203,12 @@ RewriteRule ^.*$ /index.php [END]
 		$fp = fopen(__FILE__, 'r');
 
 		if ($relative_uri == '.webdav/webdav.js') {
-			fseek($fp, 58874, SEEK_SET);
-			echo fread($fp, 31826);
+			fseek($fp, 58962, SEEK_SET);
+			echo fread($fp, 33638);
 		}
 		else {
-			fseek($fp, 58874 + 31826, SEEK_SET);
-			echo fread($fp, 7988);
+			fseek($fp, 58962 + 33638, SEEK_SET);
+			echo fread($fp, 16729);
 		}
 
 		fclose($fp);
@@ -2298,61 +2299,69 @@ const WebDAVNavigator = (url, options) => {
 	const microdown=function(){function l(n,e,r){return"<"+n+(r?" "+Object.keys(r).map(function(n){return r[n]?n+'="'+(a(r[n])||"")+'"':""}).join(" "):"")+">"+e+"</"+n+">"}function c(n,e){return e=n.match(/^[+-]/m)?"ul":"ol",n?"<"+e+">"+n.replace(/(?:[+-]|\d+\.) +(.*)\n?(([ \t].*\n?)*)/g,function(n,e,r){return"<li>"+g(e+"\n"+(t=r||"").replace(new RegExp("^"+(t.match(/^\s+/)||"")[0],"gm"),"").replace(o,c))+"</li>";var t})+"</"+e+">":""}function e(r,t,u,c){return function(n,e){return n=n.replace(t,u),l(r,c?c(n):n)}}function t(n,u){return f(n,[/<!--((.|\n)*?)-->/g,"\x3c!--$1--\x3e",/^("""|```)(.*)\n((.*\n)*?)\1/gm,function(n,e,r,t){return'"""'===e?l("div",p(t,u),{class:r}):u&&u.preCode?l("pre",l("code",a(t),{class:r})):l("pre",a(t),{class:r})},/(^>.*\n?)+/gm,e("blockquote",/^> ?(.*)$/gm,"$1",r),/((^|\n)\|.+)+/g,e("table",/^.*(\n\|---.*?)?$/gm,function(n,t){return e("tr",/\|(-?)([^|]*)\1(\|$)?/gm,function(n,e,r){return l(e||t?"th":"td",g(r))})(n.slice(0,n.length-(t||"").length))}),o,c,/#\[([^\]]+?)]/g,'<a name="$1"></a>',/^(#+) +(.*)(?:$)/gm,function(n,e,r){return l("h"+e.length,g(r))},/^(===+|---+)(?=\s*$)/gm,"<hr>"],p,u)}var i=this,a=function(n){return n?n.replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;"):""},o=/(?:(^|\n)([+-]|\d+\.) +(.*(\n[ \t]+.*)*))+/g,g=function c(n,i){var o=[];return n=(n||"").trim().replace(/`([^`]*)`/g,function(n,e){return"\\"+o.push(l("code",a(e)))}).replace(/[!&]?\[([!&]?\[.*?\)|[^\]]*?)]\((.*?)( .*?)?\)|(\w+:\/\/[$\-.+!*'()/,\w]+)/g,function(n,e,r,t,u){return u?i?n:"\\"+o.push(l("a",u,{href:u})):"&"==n[0]?(e=e.match(/^(.+),(.+),([^ \]]+)( ?.+?)?$/),"\\"+o.push(l("iframe","",{width:e[1],height:e[2],frameborder:e[3],class:e[4],src:r,title:t}))):"\\"+o.push("!"==n[0]?l("img","",{src:r,alt:e,title:t}):l("a",c(e,1),{href:r,title:t}))}),n=function r(n){return n.replace(/\\(\d+)/g,function(n,e){return r(o[Number.parseInt(e)-1])})}(i?n:r(n))},r=function t(n){return f(n,[/([*_]{1,3})((.|\n)+?)\1/g,function(n,e,r){return e=e.length,r=t(r),1<e&&(r=l("strong",r)),e%2&&(r=l("em",r)),r},/(~{1,3})((.|\n)+?)\1/g,function(n,e,r){return l([,"u","s","del"][e.length],t(r))},/  \n|\n  /g,"<br>"],t)},f=function(n,e,r,t){for(var u,c=0;c<e.length;){if(u=e[c++].exec(n))return r(n.slice(0,u.index),t)+("string"==typeof e[c]?e[c].replace(/\$(\d)/g,function(n,e){return u[e]}):e[c].apply(i,u))+r(n.slice(u.index+u[0].length),t);c++}return n},p=function(n,e){n=n.replace(/[\r\v\b\f]/g,"").replace(/\\./g,function(n){return"&#"+n.charCodeAt(1)+";"});var r=t(n,e);return r!==n||r.match(/^[\s\n]*$/i)||(r=g(r).replace(/((.|\n)+?)(\n\n+|$)/g,function(n,e){return l("p",e)})),r.replace(/&#(\d+);/g,function(n,e){return String.fromCharCode(parseInt(e))})};return{parse:p,block:t,inline:r,inlineBlock:g}}();
 
 	const PREVIEW_TYPES = /^image\/(png|webp|svg|jpeg|jpg|gif|png)|^application\/pdf|^text\/|^audio\/|^video\/|application\/x-empty/;
+	const PREVIEW_EXTENSIONS = /\.(?:png|webp|svg|jpeg|jpg|gif|png|pdf|txt|md|mp4|mkv|webm|ogg|flac|mp3|aac|m4a|avi)$/i;
 
 	const _ = key => typeof lang_strings != 'undefined' && key in lang_strings ? lang_strings[key] : key;
 
-	const rename_button = `<input class="rename" type="button" value="${_('Rename')}" />`;
-	const delete_button = `<input class="delete" type="button" value="${_('Delete')}" />`;
+	const rename_button = `<input class="icon rename" type="button" value="${_('Rename')}" title="${_('Rename')}" />`;
+	const delete_button = `<input class="icon delete" type="button" value="${_('Delete')}" title="${_('Delete')}" />`;
 
-	const edit_button = `<input class="edit" type="button" value="${_('Edit')}" />`;
+	const edit_button = `<input class="icon edit" type="button" value="${_('Edit')}" title="${_('Edit')}" />`;
 
 	const mkdir_dialog = `<input type="text" name="mkdir" placeholder="${_('Directory name')}" />`;
 	const mkfile_dialog = `<input type="text" name="mkfile" placeholder="${_('File name')}" />`;
 	const rename_dialog = `<input type="text" name="rename" placeholder="${_('New file name')}" />`;
 	const paste_upload_dialog = `<h3>Upload this file?</h3><input type="text" name="paste_name" placeholder="${_('New file name')}" />`;
 	const edit_dialog = `<textarea name="edit" cols="70" rows="30"></textarea>`;
-	const markdown_dialog = `<div id="mdp"><textarea name="edit" cols="70" rows="30"></textarea><div id="md"></div></div>`;
+	const markdown_dialog = `<div id="mdp"><textarea name="edit" cols="70" rows="30"></textarea><div class="md_preview"></div></div>`;
 	const delete_dialog = `<h3>${_('Confirm delete?')}</h3>`;
-	const wopi_dialog = `<iframe id="wopi_frame" name="wopi_frame" allowfullscreen="true" allow="autoplay camera microphone display-capture"
-			sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation allow-popups-to-escape-sandbox allow-downloads allow-modals">
+	const wopi_dialog = `<iframe id="wopi_frame" name="wopi_frame" allow="clipboard-read *; clipboard-write *;" allowfullscreen="true">
 		</iframe>`;
 
 	const dialog_tpl = `<dialog open><p class="close"><input type="button" value="&#x2716; ${_('Close')}" class="close" /></p><form><div>%s</div>%b</form></dialog>`;
 
 	const html_tpl = `<!DOCTYPE html><html>
-		<head><title>Files</title><link rel="stylesheet" type="text/css" href="${css_url}" /></head>
+		<head><title></title><link rel="stylesheet" type="text/css" href="${css_url}" /></head>
 		<body><main></main><div class="bg"></div></body></html>`;
 
-	const body_tpl = `<h1>%title%</h1>
-		<div class="upload">
-			<select class="sortorder btn">
-				<option value="name">${_('Sort by name')}</option>
-				<option value="date">${_('Sort by date')}</option>
-				<option value="size">${_('Sort by size')}</option>
-			</select>
-			<input type="button" class="download_all" value="${_('Download all files')}" />
-			<input type="button" class="deleted_selected" value="${_('Delete selected')}" />
+	const body_tpl = `
+		<div class="buttons">
+			<div class="selected">
+				<input type="button" class="icon download" value="${_('Download')}" />
+				<input type="button" class="icon delete" value="${_('Delete')}" />
+			</div>
 		</div>
-		<table>%table%</table>`;
+		<table>
+			<thead>
+				<tr>
+					<td scope="col" class="check"><input type="checkbox" name="delete" value="%uri%" /><label><span></span></label></td>
+					<td scope="col" class="name" data-sort="name"><button>${_('Name')}</button></td>
+					<td scope="col" class="size" data-sort="size"><button>${_('Size')}</button></td>
+					<td scope="col" class="date" data-sort="date"><button>${_('Date')}</button></td>
+					<td></td>
+				</tr>
+			</thead>
+			<tbody>%table%</tbody>
+		</table>`;
 
-	const create_buttons = `<input class="mkdir" type="button" value="${_('New directory')}" />
+	const create_buttons = `<input class="icon mkdir" type="button" value="${_('New directory')}" />
 		<input type="file" style="display: none;" multiple />
-		<input class="mkfile" type="button" value="${_('New text file')}" />
-		<input class="uploadfile" type="button" value="${_('Upload files')}" />`;
+		<input class="icon mkfile" type="button" value="${_('New text file')}" />
+		<input class="icon upload" type="button" value="${_('Upload files')}" />`;
 
-	const dir_row_tpl = `<tr data-permissions="%permissions%">
-		<td class="thumb"><span class="icon dir"><b>%icon%</b></span></td>
-		<th colspan="2"><a href="%uri%">%name%</a></th>
-		<td>%modified%</td>
+	const dir_row_tpl = `<tr data-permissions="%permissions%" class="%class%" data-name="%name%">
+		<td class="check"><input type="checkbox" name="delete" value="%uri%" /><label><span></span></label></td>
+		<th colspan="2"><a href="%uri%">%thumb% %name%</a></th>
+		<td class="date">%modified%</td>
 		<td class="buttons"><div></div></td>
 	</tr>`;
 
-	const file_row_tpl = `<tr data-permissions="%permissions%" data-mime="%mime%" data-size="%size%">
-		<td class="thumb">%thumb%<label><input type="checkbox" name="delete" value="%uri%" /><span></span></label></td>
-		<th><a href="%uri%">%name%</a></th>
+	const file_row_tpl = `<tr data-permissions="%permissions%" data-mime="%mime%" data-size="%size%" data-name="%name%">
+		<td class="check"><input type="checkbox" name="delete" value="%uri%" /><label><span></span></label></td>
+		<th><a href="%uri%">%thumb% %name%</a></th>
 		<td class="size">%size_bytes%</td>
-		<td>%modified%</td>
-		<td class="buttons"><div><a href="%uri%" download class="btn">${_('Download')}</a></div></td>
+		<td class="date">%modified%</td>
+		<td class="buttons"><div><a href="%uri%" download title="${_('Download')}" class="btn">${_('Download')}</a></div></td>
 	</tr>`;
 
 	const icon_tpl = `<span class="icon %icon%"><b>%icon%</b></span>`;
@@ -2646,14 +2655,18 @@ const WebDAVNavigator = (url, options) => {
 		window.onbeforeunload = null;
 	};
 
-	const download_all = async () => {
+	const download_selected = async () => {
+		var items = document.querySelectorAll('tbody input[type=checkbox]:checked');
 		for (var i = 0; i < items.length; i++) {
-			var item = items[i];
-			if (item.is_dir) {
-				continue;
+			var input = items[i];
+			var row = input.parentNode.parentNode;
+
+			// Skip directories
+			if (!row.dataset.mime) {
+				return;
 			}
 
-			await download(item.name, item.size, item.uri)
+			await download(row.dataset.name, row.dataset.size, row.querySelector('th a').href);
 		}
 	};
 
@@ -2713,7 +2726,7 @@ const WebDAVNavigator = (url, options) => {
 			return _('Yesterday, %s').replace(/%s/, date.toLocaleTimeString());
 		}
 
-		return date.toLocaleString();
+		return date.toLocaleString([], {year: 'numeric', month: 'numeric', day: 'numeric'});
 	};
 
 	const openListing = (uri, push) => {
@@ -2775,7 +2788,7 @@ const WebDAVNavigator = (url, options) => {
 	const buildListing = (uri, xml) => {
 		uri = normalizeURL(uri);
 
-		items = [[], []];
+		items = [];
 		var title = null;
 		var root_permissions = null;
 
@@ -2808,9 +2821,9 @@ const WebDAVNavigator = (url, options) => {
 			}
 
 			var is_dir = node.querySelector('resourcetype collection') ? true : false;
-			var index = sort_order == 'name' && is_dir ? 0 : 1;
+			var index = is_dir ? 0 : 1;
 
-			items[index].push({
+			items.push({
 				'uri': item_uri,
 				'path': item_uri.substring(base_url.length),
 				'name': name,
@@ -2822,39 +2835,35 @@ const WebDAVNavigator = (url, options) => {
 			});
 		});
 
-		if (sort_order == 'name') {
-			items[0].sort((a, b) => a.name.localeCompare(b.name));
-		}
-
-		items[1].sort((a, b) => {
-			if (sort_order == 'date') {
-				return b.modified - a.modified;
+		items.sort((a, b) => {
+			if (sort_order === 'date') {
+				return a.modified - b.modified;
 			}
-			else if (sort_order == 'size') {
-				return b.size - a.size;
+			else if (sort_order === 'size') {
+				return a.size - b.size;
 			}
 			else {
 				return a.name.localeCompare(b.name);
 			}
 		});
 
-		if (sort_order == 'name') {
+		if (sort_order !== 'date') {
 			// Sort with directories first
-			items = items[0].concat(items[1]);
-		}
-		else {
-			items = items[1];
+			items.sort((a, b) => b.is_dir - a.is_dir);
 		}
 
+		if (sort_order_desc) {
+			items = items.reverse();
+		}
 
 		var table = '';
 		var parent = uri.replace(/\/+$/, '').split('/').slice(0, -1).join('/') + '/';
 
 		if (parent.length >= base_url.length) {
-			table += template(dir_row_tpl, {'name': _('Back'), 'uri': parent, 'icon': '&#x21B2;'});
+			table += template(dir_row_tpl, {'name': _('Back'), 'uri': parent, 'class': 'parent', 'thumb': template(icon_tpl, {})});
 		}
 		else {
-			title = 'My files';
+			title = _('My files');
 		}
 
 		items.forEach(item => {
@@ -2866,7 +2875,17 @@ const WebDAVNavigator = (url, options) => {
 
 			var row = item.is_dir ? dir_row_tpl : file_row_tpl;
 			item.size_bytes = item.size !== null ? formatBytes(item.size).replace(/ /g, '&nbsp;') : null;
-			item.icon = item.is_dir ? '&#x1F4C1;' : (item.uri.indexOf('.') > 0 ? item.uri.replace(/^.*\.(\w+)$/, '$1').toUpperCase() : '');
+
+			if (!item.is_dir && (pos = item.uri.lastIndexOf('.'))) {
+				var ext = item.uri.substr(pos+1).toUpperCase();
+
+				if (ext.length > 4) {
+					ext = '';
+				}
+			}
+
+			item.icon = ext ?? '';
+			item.class = item.is_dir ? 'dir' : 'file';
 			item.modified = item.modified !== null ? formatDate(item.modified) : null;
 			item.name = html(item.name);
 
@@ -2883,22 +2902,40 @@ const WebDAVNavigator = (url, options) => {
 		document.title = title;
 		document.querySelector('main').innerHTML = template(body_tpl, {'title': html(document.title), 'base_url': base_url, 'table': table});
 
-		var select = $('.sortorder');
-		select.value = sort_order;
-		select.onchange = () => {
-			sort_order = select.value;
-			window.localStorage.setItem('sort_order', sort_order);
+		var parent_check = document.querySelector('tbody tr.parent .check');
+
+		if (parent_check) {
+			parent_check.innerHTML = '';
+		}
+
+		var column = document.querySelector('thead td[data-sort="' + sort_order + '"]').className += ' selected ' + (sort_order_desc ? 'desc' : 'asc');
+
+		document.querySelectorAll('thead td[data-sort] button').forEach(elm => elm.onclick = (e) => {
+			var new_sort_order = e.target.parentNode.dataset.sort;
+
+			if (sort_order == new_sort_order) {
+				sort_order_desc = !sort_order_desc;
+			}
+
+			sort_order = new_sort_order;
+
+			window.localStorage.setItem('sort_order', new_sort_order);
+			window.localStorage.setItem('sort_order_desc', sort_order_desc ? '1' : '0');
 			reloadListing();
+		});
+
+		document.querySelector('thead td.check input').onchange = (e) => {
+			document.querySelectorAll('tbody td.check input').forEach(i => i.checked = e.target.checked);
 		};
 
 		if (!items.length) {
-			$('.download_all').disabled = true;
+			$('div.buttons .download').disabled = true;
 		}
 		else {
-			$('.download_all').onclick = download_all;
+			$('div.buttons .download').onclick = download_selected;
 		}
 
-		$('.deleted_selected').onclick = () => {
+		$('div.buttons .delete').onclick = () => {
 			var l = document.querySelectorAll('input[name=delete]:checked');
 
 			if (!l.length) {
@@ -2924,7 +2961,7 @@ const WebDAVNavigator = (url, options) => {
 		};
 
 		if (!root_permissions || root_permissions.indexOf('C') != -1 || root_permissions.indexOf('K') != -1) {
-			$('.upload').insertAdjacentHTML('afterbegin', create_buttons);
+			$('.buttons').insertAdjacentHTML('beforeend', create_buttons);
 
 			$('.mkdir').onclick = () => {
 				openDialog(mkdir_dialog);
@@ -2959,7 +2996,7 @@ const WebDAVNavigator = (url, options) => {
 
 			var fi = $('input[type=file]');
 
-			$('.uploadfile').onclick = () => fi.click();
+			$('.upload').onclick = () => fi.click();
 
 			fi.onchange = () => {
 				if (!fi.files.length) return;
@@ -2968,10 +3005,10 @@ const WebDAVNavigator = (url, options) => {
 			};
 		}
 
-		Array.from($('table').rows).forEach((tr) => {
+		document.querySelectorAll('table tbody tr').forEach(tr => {
 			var $$ = (a) => tr.querySelector(a);
 			var file_url = $$('a').href;
-			var file_name = $$('a').innerText;
+			var file_name = tr.dataset.name;
 			var dir = $$('[colspan]');
 			var mime = !dir ? tr.getAttribute('data-mime') : 'dir';
 			var buttons = $$('td.buttons div');
@@ -3045,10 +3082,20 @@ const WebDAVNavigator = (url, options) => {
 			}
 
 			var view_url, edit_url;
+			var allow_preview = false;
+
+			if (mime.match(PREVIEW_TYPES)
+				|| file_name.match(PREVIEW_EXTENSIONS)) {
+				allow_preview = true;
+			}
 
 			// Don't preview PDF in mobile
-			if (mime.match(PREVIEW_TYPES)
-				&& !(mime == 'application/pdf' && window.navigator.userAgent.match(/Mobi|Tablet|Android|iPad|iPhone/))) {
+			if ((mime == 'application/pdf' || file_name.match(/\.pdf/i))
+				&& window.navigator.userAgent.match(/Mobi|Tablet|Android|iPad|iPhone/)) {
+				allow_preview = false;
+			}
+
+			if (allow_preview) {
 				$$('a').onclick = () => {
 					if (file_url.match(/\.md$/)) {
 						openDialog('<div class="md_preview"></div>', false);
@@ -3076,7 +3123,7 @@ const WebDAVNavigator = (url, options) => {
 			else if (user && password && !dir) {
 				$$('a').onclick = () => { download(file_name, size, file_url); return false; };
 			}
-			else {
+			else if (!dir) {
 				$$('a').download = file_name;
 			}
 
@@ -3174,7 +3221,7 @@ const WebDAVNavigator = (url, options) => {
 
 							// Markdown editor
 							if (md) {
-								let pre = $('#md');
+								let pre = $('.md_preview');
 
 								txt.oninput = () => {
 									pre.innerHTML = microdown.parse(txt.value);
@@ -3228,6 +3275,7 @@ const WebDAVNavigator = (url, options) => {
 
 	var evt, paste_upload, popstate_evt, temp_object_url;
 	var sort_order = window.localStorage.getItem('sort_order') || 'name';
+	var sort_order_desc = !!parseInt(window.localStorage.getItem('sort_order_desc'), 10);
 	var wopi_mimes = {}, wopi_extensions = {};
 
 	const wopi_discovery_url = options.wopi_discovery_url || null;
@@ -3306,7 +3354,9 @@ const WebDAVNavigator = (url, options) => {
 		document.body.classList.remove('dragging');
 		dragcounter = 0;
 
-		const files = [...e.dataTransfer.items].map(item => item.getAsFile());
+		var files = [...e.dataTransfer.items].map(item => item.getAsFile());
+
+		files = files.filter(f => f !== null);
 
 		if (!files.length) return;
 
@@ -3323,24 +3373,29 @@ if (url = document.querySelector('html').getAttribute('data-webdav-url')) {
 :root {
 	--bg-color: #fff;
 	--fg-color: #000;
-	--g1-color: #eee;
-	--g2-color: #ccc;
-	--g3-color: #999;
-	--link-color: blue;
-	--visited-color: purple;
-	--active-color: darkred;
+	--g1-color: #f5f7f7;
+	--g2-color: #ccd8d6;
+	--g3-color: #7c9696;
+	--link-color: #2e3c3a;
+	--visited-color: #2e3c3a;
+	--active-color: #c47508;
+}
+
+* {
+	margin: 0;
+	padding: 0;
 }
 
 body {
 	text-align: center;
-	font-size: 1.1em;
-	font-family: Arial, Helvetica, sans-serif;
+	font-family: "Trebuchet MS", Arial, Helvetica, sans-serif;
 	background: var(--bg-color);
 	color: var(--fg-color);
 }
 
 a:link {
 	color: var(--link-color);
+	text-decoration: none;
 }
 
 a:visited {
@@ -3349,70 +3404,126 @@ a:visited {
 
 a:hover {
 	color: var(--active-color);
+	text-decoration: underline;
 }
 
 table {
-	margin: 2em auto;
+	margin: 0 auto;
 	border-collapse: collapse;
-	width: 90%;
+	width: 100%;
 }
 
-th, td {
-	padding: .5em;
+thead td {
+	height: 2em;
+	vertical-align: bottom;
+}
+
+thead button {
+	width: 100%;
+	border: none;
+	text-align: inherit;
+	font: inherit;
+	background: none;
+	cursor: pointer;
+	font-size: .9em;
+	color: #999;
+	padding: .4em;
+}
+
+thead .selected button::after {
+	content: "🠇";
+	margin-left: .5em;
+}
+
+thead .selected.desc button::after {
+	content: "🠅";
+}
+
+td.name, tbody th, td.date {
 	text-align: left;
-	border: 2px solid var(--g2-color);
 }
 
-th {
+tbody tr:has(.check input:checked) {
+	background: #fdefdc;
+}
+
+tbody th, tbody td {
+	padding: 0 .5em;
+	text-align: left;
+	border-top: 1px solid var(--g2-color);
+	border-bottom: 1px solid var(--g2-color);
+	vertical-align: middle;
+}
+
+tbody th {
 	word-break: break-all;
+	font-weight: normal;
 }
 
-td.thumb {
-	width: 3.6em;
-	padding: 0;
-	text-align: center;
+tbody th a {
+	display: flex;
+	align-items: center;
+	justify-content: flex-start;
+	gap: 1em;
+}
+
+tbody th img {
+	width: 2em;
+	height: 2em;
+	border-radius: .2em;
+}
+
+tbody th .icon {
+	width: 2em;
+	height: 2em;
+	border-radius: .2em;
+	overflow: hidden;
+	background: no-repeat center center;
+	background-size: 100%;
 	position: relative;
 }
 
-td.thumb img {
-	width: 3.6em;
-	height: 3.6em;
-	display: block;
-}
-
-td.thumb .icon {
-	margin: .5em;
-}
-
-td.thumb input, td.thumb label span::before {
+th .icon b {
+	font-size: 7pt;
+	font-weight: normal;
+	text-decoration: none;
+	display: inline-block;
+	background: #eee;
+	border-radius: .3em;
+	padding: 0 .2em;
+	color: #2e3c3a;
 	position: absolute;
-	top: 0;
-	left: 0;
-	right: 0;
 	bottom: 0;
-	margin: 0;
-	padding: 0;
-	opacity: 0;
-	display: block;
+	right: 0;
+	border: 1px solid #2e3c3a;
+}
+
+td.check {
+	width: 1.5em;
+	text-align: center;
+}
+
+td.check input {
 	cursor: pointer;
-	user-select: none;
+	width: 1.5em;
+	height: 1.5em;
+	border: 2px solid #999;
+	border-radius: .2em;
+	background: none;
+	appearance: none;
+	outline: 0;
 }
 
-td.thumb input:checked + span::before {
-	content: "✔️";
-	font-size: 3em;
-	opacity: 1;
-	color: #fff;
-	text-shadow: 0px 0px 5px #000, 0px 0px 10px #000;
-	display: flex;
-	align-items: center;
-	justify-content: center;
+td.check input:checked {
+	box-shadow: 0px 0px 5px darkorange;
+	background: no-repeat center center;
+	background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"><path fill="none" stroke="%23666" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m5 12l5 5L20 7"/></svg>');
+	background-size: contain;
 }
-
 
 td.buttons {
 	text-align: right;
-	width: 20em;
+	width: 5em;
 }
 
 td.buttons div {
@@ -3420,60 +3531,65 @@ td.buttons div {
 	flex-direction: row-reverse;
 }
 
-table tr:nth-child(even) {
+tbody tr:nth-child(even) {
 	background: var(--g1-color);
 }
 
-.icon {
-	width: 2.6em;
-	height: 2.6em;
-	display: inline-block;
-	border-radius: .2em;
-	background:var(--g3-color);
-	overflow: hidden;
-	color: var(--bg-color);
-	text-align: center;
+tbody th .icon {
+	background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><g fill="none" stroke="%232e3c3a" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2"/></g></svg>');
 }
 
-.icon b {
-	font-weight: normal;
-	display: inline-block;
-	transform: rotate(-30deg);
-	line-height: 2.6rem;
+th .icon.JPEG, th .icon.PNG, th .icon.JPG, th .icon.GIF, th .icon.SVG, th .icon.WEBP {
+	background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><g fill="none" stroke="%232e3c3a" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path d="M15 8h.01M3 6a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3z"/><path d="m3 16l5-5c.928-.893 2.072-.893 3 0l5 5"/><path d="m14 14l1-1c.928-.893 2.072-.893 3 0l3 3"/></g></svg>');
 }
 
-.icon.JPEG, .icon.PNG, .icon.JPG, .icon.GIF, .icon.SVG, .icon.WEBP {
-	background: #966;
+th .icon.TXT, th .icon.MD {
+	background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><g fill="none" stroke="%232e3c3a" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2M9 9h1m-1 4h6m-6 4h6"/></g></svg>');
 }
 
-.icon.TXT, .icon.MD {
-	background: var(--fg-color);
+th .icon.MP4, th .icon.MKV, th .icon.MP3, th .icon.M4A, th .icon.WAV, th .icon.FLAC, th .icon.OGG, th .icon.OGV, th .icon.AAC, th .icon.WEBM {
+	background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="%232e3c3a" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m15 10l4.553-2.276A1 1 0 0 1 21 8.618v6.764a1 1 0 0 1-1.447.894L15 14zM3 8a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>');
 }
 
-.icon.MP4, .icon.MKV, .icon.MP3, .icon.M4A, .icon.WAV, .icon.FLAC, .icon.OGG, .icon.OGV, .icon.AAC, .icon.WEBM {
-	background: #669;
+th .icon.document {
+	background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><g fill="%23829a9a"><path d="m12 2l.117.007a1 1 0 0 1 .876.876L13 3v4l.005.15a2 2 0 0 0 1.838 1.844L15 9h4l.117.007a1 1 0 0 1 .876.876L20 10v9a3 3 0 0 1-2.824 2.995L17 22H7a3 3 0 0 1-2.995-2.824L4 19V5a3 3 0 0 1 2.824-2.995L7 2z"/><path d="M19 7h-4l-.001-4.001z"/></g></svg>');
 }
 
-.icon.document {
-	background: #696;
+th .icon.document b {
+	position: relative;
+	background: none;
+	border: none;
+	color: #fff;
+	width: 100%;
+	height: 100%;
+	padding: 0;
+	display: inline-flex;
+	justify-content: center;
+	align-items: center;
 }
 
-.icon.PDF {
-	background: #969;
+.dir th .icon {
+	background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"><path fill="none" stroke="%232e3c3a" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 4h4l3 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2"/></svg>');
 }
 
-.icon.dir {
-	background: var(--g2-color);
-	color: var(--fg-color);
+.parent th .icon {
+	background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="%232e3c3a" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m9 11l-4 4l4 4m-4-4h11a4 4 0 0 0 0-8h-1"/></svg>');
 }
 
-.icon.dir b {
-	font-size: 2em;
-	transform: none;
+.dir th .icon b, .parent th .icon b {
+	display: none;
 }
 
-.size {
+td.size {
 	text-align: right;
+	font-size: .9em;
+	color: #666;
+}
+
+td.date {
+	font-size: .9em;
+	color: #666;
+	min-width: 9em;
 }
 
 input[type=button], input[type=submit], .btn, a.btn {
@@ -3511,7 +3627,7 @@ input:focus, textarea:focus {
 input[type=button]:hover, input[type=submit]:hover, .btn:hover {
 	color: var(--active-color);
 	text-decoration: underline;
-	background: var(--bg-color);
+	background-color: var(--bg-color);
 	box-shadow: 0px 0px 5px var(--fg-color);
 }
 
@@ -3571,8 +3687,31 @@ dialog form div {
 	text-align: center;
 }
 
-.upload {
-	margin: 1em 0;
+div.buttons {
+	display: flex;
+	justify-content: flex-end;
+	margin: .5em;
+	margin-bottom: 0;
+}
+
+div.buttons .selected {
+	margin-right: auto;
+	display: none;
+}
+
+body:has(tbody .check input:checked) div.buttons .selected {
+	display: block;
+}
+
+div.buttons input {
+	overflow: visible;
+	text-indent: 0;
+	width: auto;
+	height: auto;
+	background-position: .2em center;
+	padding: .3em .5em;
+	padding-left: 2em;
+	background-size: 1.3em;
 }
 
 #mdp div, #mdp textarea {
@@ -3584,7 +3723,7 @@ dialog form div {
 	margin: 0;
 }
 
-#md {
+#mdp .md_preview {
 	overflow: hidden;
 	overflow-x: auto;
 }
@@ -3594,10 +3733,10 @@ dialog form div {
 	grid-template-columns: 1fr 1fr;
 	grid-gap: .2em;
 	background: var(--g1-color);
-	height: 82vh;
+	height: 90vh;
 }
 
-#md img, #md video, #md iframe, #md embed, #md object {
+.md_preview img, .md_preview video, .md_preview iframe, .md_preview embed, .md_preview object {
 	max-width: 100%;
 }
 
@@ -3614,7 +3753,7 @@ dialog.preview {
 	overflow: hidden;
 }
 
-iframe, .md_preview {
+iframe, dialog.preview .md_preview {
 	overflow: auto;
 	position: absolute;
 	top: 0;
@@ -3655,11 +3794,21 @@ iframe, iframe body, .md_preview {
 	max-height: 100%;
 }
 
-.md_preview {
+dialog.preview .md_preview {
 	width: calc(100vw - 2em);
-	height: calc(100vh - 2em);
+	height: calc(100vh - 4em);
 	padding: 1em;
 	text-align: left;
+	padding-bottom: 2em;
+}
+
+.md_preview ul, .md_preview ol, .md_preview p, .md_preview blockquote, .md_preview pre,
+.md_preview h1, .md_preview h2, .md_preview h3, .md_preview h4, .md_preview h5, .md_preview h6  {
+	margin: 1rem 0;
+}
+
+.md_preview ul, .md_preview ol, .md_preview blockquote {
+	margin-left: 2em;
 }
 
 .preview .close {
@@ -3748,11 +3897,63 @@ input[name=rename], input[name=paste_name] {
 
 dialog {
 	transition: all .3s;
+	margin: auto;
+	padding: 1em;
+}
+
+dialog:has(#mdp) {
+	margin: 0;
+	padding: .5em;
+	border-radius: none;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	height: 100vh;
 }
 
 progress {
 	height: 2em;
 	width: 90%;
+}
+
+input.icon, .buttons a[download] {
+	background: #e0e6e6 no-repeat center center;
+	background-size: contain;
+	width: 1.8em;
+	height: 1.8em;
+	padding: 0;
+	overflow: hidden;
+	text-indent: 100em;
+	display: inline-block;
+}
+
+input.delete {
+	background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="%232e3c3a" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7h16m-10 4v6m4-6v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3"/></svg>');
+}
+
+input.rename {
+	background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 512 512"><path fill="%232e3c3a" fill-rule="evenodd" d="M405.334 64v21.333h-42.667v341.333h42.667V448l-42.667-.001V448h-21.333l-.001-.001l-42.666.001v-21.333l42.666-.001V85.333h-42.666V64zm64 64v256H384v-42.667h42.667V170.667H384V128zM320 128v256H42.667V128zm-98.133 25.6H192v145.067c0 13.333-.833 21.666-1.458 29.687l-.082 1.068l-.079 1.067c-.296 4.09-.514 8.207-.514 12.978h29.867v-19.2a42.67 42.67 0 0 0 38.4 21.333a45.65 45.65 0 0 0 36.266-17.067a99.63 99.63 0 0 0 19.2-53.333c0-40.533-21.333-68.267-53.333-68.267a48.43 48.43 0 0 0-38.4 19.2zm-59.733 72.533a54.61 54.61 0 0 0-44.8-17.066a102.2 102.2 0 0 0-49.067 10.666l8.533 21.334a96.2 96.2 0 0 1 36.267-10.667a27.093 27.093 0 0 1 29.867 29.867v2.133H121.6a89.2 89.2 0 0 0-38.4 6.4a35.63 35.63 0 0 0-21.333 36.267a38.187 38.187 0 0 0 42.667 38.4a50.35 50.35 0 0 0 40.533-17.067v14.933H172.8a172.4 172.4 0 0 1-2.133-34.133v-38.4a66.77 66.77 0 0 0-8.533-42.667m-21.334 51.2v25.6a37.12 37.12 0 0 1-29.866 19.2a17.92 17.92 0 0 1-19.2-19.2c0-14.933 10.666-23.466 36.266-25.6zM251.734 230.4c17.066 0 29.866 17.067 29.866 44.8S270.934 320 253.867 320a35.84 35.84 0 0 1-32-21.333v-46.934a40.32 40.32 0 0 1 29.867-21.333"/></svg>');
+}
+
+.buttons a[download], input.download {
+	background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="%232e3c3a" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M7 11l5 5l5-5m-5-7v12"/></svg>');
+}
+
+input.edit {
+	background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="%232e3c3a" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 20h4L18.5 9.5a2.828 2.828 0 1 0-4-4L4 16zm9.5-13.5l4 4"/></svg>');
+}
+
+input.mkdir {
+	background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="%232e3c3a" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h4l3 3h7a2 2 0 0 1 2 2v3.5M16 19h6m-3-3v6"/></svg>');
+}
+
+input.mkfile {
+	background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><g fill="none" stroke="%232e3c3a" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2m-5-10v6m-3-3h6"/></g></svg>');
+}
+
+input.upload {
+	background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="%232e3c3a" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M7 9l5-5l5 5m-5-5v12"/></svg>');
 }
 
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -3767,74 +3968,99 @@ progress {
 
 	body {
 		margin: 0;
-		font-size: 1em;
+	}
+
+	div.buttons {
+		flex-wrap: wrap;
+		justify-content: center;
+		flex-direction: row;
+		font-size: .9em;
+	}
+
+	div.buttons .selected {
+		margin: 0;
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		padding: 1em;
+		background: var(--bg-color);
+		box-shadow: 0px 0px 2px 5px var(--g3-color);
 	}
 
 	table {
-		margin: 2em 0;
 		width: 100%;
 		display: flex;
 		flex-direction: column;
 	}
 
-	table tr {
-		display: block;
-		border-top: 5px solid var(--bg-color);
+	table tbody tr {
+		display: grid;
+		grid-template-columns: 3rem 1fr .3fr;
+		grid-template-areas:
+			"name name check"
+			"size date buttons";
 		padding: 0;
-		padding-left: 2em;
-		position: relative;
-		text-align: left;
-		min-height: 2.5em;
 	}
 
-	table td, table th {
+	table tbody td, table tbody th {
 		border: none;
-		display: inline-block;
+		display: block;
 		padding: .2em .5em;
+		width: unset;
 	}
 
-	table td.buttons {
-		display: block;
-		width: auto;
-		text-align: left;
+	table tbody th {
+		grid-area: name;
 	}
 
-	 td.buttons div {
-	 	display: inline-block;
-	 }
-
-	table td.thumb {
-		padding: 0;
-		width: 2em;
-		position: absolute;
-		left: 0;
-		top: 0;
-		bottom: 0;
+	table tbody td.check {
+		grid-area: check;
+		text-align: right;
+		width: unset;
 	}
 
-	table th {
-		display: block;
+	table tbody td.buttons {
+		grid-area: buttons;
+		width: unset;
 	}
 
-	.icon {
-		font-size: 12px;
-		height: 100%;
-		border-radius: 0;
+	table tbody  td.date {
+		grid-area: date;
+		display: inline-block;
+		min-width: unset;
 	}
 
-	.icon:not(.dir) b {
-		line-height: 3em;
-		display: block;
-		transform: translateX(-50%) translateY(-50%) rotate(-90deg);
-		font-size: 2em;
-		height: 3em;
-		position: absolute;
-		top: 50%;
-		left: 50%;
+	table tbody td.size {
+		grid-area: size;
+		font-size: .8em;
+		width: 3rem;
+		overflow: hidden;
+		text-align: center;
 	}
 
 	table th a {
 		font-size: 1.2em;
+		gap: .5em;
+	}
+
+	table thead tr {
+		display: block;
+		text-align: left;
+	}
+
+	table thead tr td {
+		display: inline-block;
+		vertical-align: top;
+	}
+
+	table thead td.check {
+		float: right;
+		margin-right: .4em;
+	}
+
+	table thead button {
+		font-size: 1rem;
 	}
 
 	input[name=rename], input[name=paste_name] {
