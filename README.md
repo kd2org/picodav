@@ -6,7 +6,7 @@ If you drop the [`index.php`](https://fossil.kd2.org/picodav/doc/trunk/index.php
 
 ![Web UI screenshot](scr.webp)
 
-* Single-file WebDAV server! Only 85 KB!
+* Single-file WebDAV server! Only 110 KB!
 * No database!
 * Very fast and lightweight!
 * Compatible with tons of apps!
